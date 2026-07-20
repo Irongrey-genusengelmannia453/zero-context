@@ -1,0 +1,1 @@
+console.log("[ZeroContext] Content script active on AI domain.");

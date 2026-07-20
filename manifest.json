@@ -1,0 +1,38 @@
+{
+    "manifest_version": 3,
+    "name": "ZeroContext - Local PII Redactor",
+    "version": "1.0.0",
+    "description": "Client-side, zero-latency Data Loss Prevention (DLP) for AI interfaces.",
+    "permissions": [
+        "activeTab",
+        "clipboardRead",
+        "clipboardWrite",
+        "storage",
+        "offscreen"
+    ],
+    "host_permissions": [
+        "https://chatgpt.com/*",
+        "https://claude.ai/*",
+        "https://gemini.google.com/*"
+    ],
+    "action": {
+        "default_popup": "index.html",
+        "default_title": "ZeroContext"
+    },
+    "background": {
+        "service_worker": "src/background.ts",
+        "type": "module"
+    },
+    "content_scripts": [
+        {
+            "matches": [
+                "https://chatgpt.com/*",
+                "https://claude.ai/*",
+                "https://gemini.google.com/*"
+            ],
+            "js": [
+                "src/content.ts"
+            ]
+        }
+    ]
+}
