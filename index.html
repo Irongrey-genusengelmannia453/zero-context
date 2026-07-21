@@ -6,17 +6,51 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ZeroContext</title>
   <link rel="stylesheet" href="../node_modules/@picocss/pico/css/pico.min.css">
+  <link rel="stylesheet" href="./src/style.css">
 </head>
 
 <body>
-  <main class="container">
-    <h3>ZeroContext</h3>
-    <p><small>Status: Active & Shielded</small></p>
+  <main>
+    <hgroup>
+      <h3>ZeroContext</h3>
+      <p><small id="status-text" style="color: var(--pico-ins-color);">Status: Active & Shielded</small></p>
+    </hgroup>
+
     <hr />
-    <label for="toggle">
-      <input type="checkbox" id="toggle" name="toggle" role="switch" checked>
-      Enable Redaction
-    </label>
+
+    <fieldset>
+      <label for="master-toggle">
+        <input type="checkbox" id="master-toggle" name="master-toggle" role="switch" checked>
+        <strong>Enable Redaction</strong>
+      </label>
+    </fieldset>
+
+    <details open>
+      <summary>Protection Engine</summary>
+      <fieldset class="shield-options" id="engine-fieldset">
+        <label class="engine-label">
+          <input type="radio" name="engine-mode" value="standard" />
+          <div class="engine-text">
+            <strong>Standard Mode</strong>
+            <div class="engine-desc">Lightning fast and highly efficient. Runs on strict rules.</div>
+            <div class="engine-target">
+              <span class="target-badge">PROTECTS</span>
+              <span class="target-list">Emails, IDs, and Phone Numbers</span>
+            </div>
+          </div>
+        </label>
+        <label class="engine-label">
+          <input type="radio" name="engine-mode" value="deep" checked />
+          <div class="engine-text">
+            <strong>Smart Mode (AI)</strong>
+            <div class="engine-desc">Understands sentence context to catch hidden sensitive details.</div>
+            <div class="engine-target">
+              <span class="target-badge">PROTECTS</span>
+              <span class="target-list">Names, Organizations, and Addresses</span>
+            </div>
+        </label>
+      </fieldset>
+    </details>
   </main>
   <script type="module" src="/src/main.ts"></script>
 </body>

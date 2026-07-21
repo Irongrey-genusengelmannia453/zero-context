@@ -1,0 +1,95 @@
+body {
+    width: 360px;
+    margin: 0;
+    padding: 16px;
+    overflow-x: hidden;
+}
+
+h3 {
+    white-space: nowrap;
+    margin-bottom: 0.2rem;
+}
+
+/* Flexbox layout to perfectly align radio buttons with text */
+.engine-label {
+    display: flex;
+    align-items: flex-start;
+    padding: 12px;
+    margin-bottom: 8px;
+    border: 1px solid var(--pico-muted-border-color);
+    border-radius: var(--pico-border-radius);
+    cursor: pointer;
+    transition: background-color 0.2s ease, opacity 0.2s ease;
+    gap: 12px;
+    /* Space between the radio dot and the text */
+}
+
+/* Pushes the radio button down slightly and PREVENTS SQUISHING */
+.engine-label input[type="radio"] {
+    margin-top: 4px;
+    flex-shrink: 0;
+    /* The fix for the elliptical shape */
+    width: 1.1rem;
+    /* Lock the width */
+    height: 1.1rem;
+    /* Lock the height */
+}
+
+/* Group the title and description vertically */
+.engine-text {
+    display: flex;
+    flex-direction: column;
+}
+
+/* The technical description - Switched to a high-contrast accessible gray */
+.engine-desc {
+    color: #A0AAB2;
+    font-size: 0.85rem;
+    line-height: 1.4;
+    margin-top: 4px;
+}
+
+/* The container for the feature list */
+.engine-target {
+    margin-top: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* The strictly typographic label (Replaces the ugly background box) */
+.target-badge {
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--pico-primary);
+    /* Uses your theme's blue accent */
+}
+
+/* The list of items */
+.target-list {
+    font-size: 0.75rem;
+    /* Slightly reduced to fit the tight container */
+    color: #8B949E;
+    white-space: nowrap;
+    /* Strictly forbids the text from wrapping to a new line */
+    overflow: hidden;
+    /* Hides anything that pushes past the container edge */
+    text-overflow: ellipsis;
+    /* Elegantly adds "..." if it runs out of room */
+}
+
+.engine-label:hover {
+    background-color: var(--pico-form-element-background-color);
+}
+
+/* Visually dim the entire block when the master toggle disables the fieldset */
+fieldset:disabled .engine-label {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+fieldset:disabled .engine-label:hover {
+    background-color: transparent;
+}
