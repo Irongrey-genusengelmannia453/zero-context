@@ -20,7 +20,7 @@ document.addEventListener("paste", async (event: ClipboardEvent) => {
     console.log("[ZeroContext] Intercepted text. Forwarding to background vault...");
 
     try {
-        // 3. Send to our background script (which takes ~100ms)
+        // 3. Send to our background script
         const response = await chrome.runtime.sendMessage({
             action: "REDACT_TEXT",
             payload: pastedText
@@ -37,3 +37,70 @@ document.addEventListener("paste", async (event: ClipboardEvent) => {
         console.error("[ZeroContext] Message passing failed.", error);
     }
 });
+
+// Listener for native Ctrl+C or standard DOM copy events
+document.addEventListener("copy", (event: ClipboardEvent) => {
+    let copiedText = window.getSelection()?.toString() || "";
+
+    if (!copiedText && event.clipboardData) {
+        copiedText = event.clipboardData.getData("text/plain");
+    }
+
+    if (!copiedText.trim()) return;
+
+    setTimeout(async () => {
+        try {
+            const response = await chrome.runtime.sendMessage({
+                action: "UNREDACT_TEXT",
+                payload: copiedText
+            });
+
+            if (response && response.status === "SUCCESS") {
+                if (response.data !== copiedText) {
+                    await navigator.clipboard.writeText(response.data);
+                    console.log("[ZeroContext] Clipboard un-redacted successfully (Ctrl+C).");
+                }
+            }
+        } catch (err) {
+            console.error("[ZeroContext] Failed to unredact clipboard:", err);
+        }
+    }, 50); 
+});
+
+// Listener for intercepted programmatic clipboard writes from the MAIN world (e.g. Chat UI "Copy" button)
+document.addEventListener("zerocontext_intercept_copy", async (e: Event) => {
+    const customEvent = e as CustomEvent;
+    const { eventId, text } = customEvent.detail;
+
+    if (!text || !text.trim()) {
+        dispatchResponse(eventId, text);
+        return;
+    }
+
+    try {
+        const response = await chrome.runtime.sendMessage({
+            action: "UNREDACT_TEXT",
+            payload: text
+        });
+
+        if (response && response.status === "SUCCESS") {
+            dispatchResponse(eventId, response.data);
+            console.log("[ZeroContext] Programmatic clipboard write un-redacted successfully.");
+        } else {
+            dispatchResponse(eventId, text); // Fallback to original
+        }
+    } catch (error) {
+        console.error("[ZeroContext] Error processing intercepted copy:", error);
+        dispatchResponse(eventId, text); // Fallback to original
+    }
+});
+
+function dispatchResponse(eventId: string, finalStr: string) {
+    const responseEvent = new CustomEvent("zerocontext_unredact_response", {
+        detail: {
+            eventId: eventId,
+            text: finalStr
+        }
+    });
+    document.dispatchEvent(responseEvent);
+}
