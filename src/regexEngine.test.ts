@@ -52,19 +52,19 @@ describe('Regex Engine & Luhn Validation', () => {
         it('should redact valid standard emails', () => {
             const input = 'My email is test@example.com.';
             const redacted = redactText(tabId, input, vault);
-            expect(redacted).toMatch(/My email is \[EMAIL_\d{5,6}\]\./);
+            expect(redacted).toMatch(/My email is user\.\d{4}@example\.com\./);
         });
 
         it('should redact emails with subdomains and plus addressing', () => {
             const input = 'Reach out at first.last+tag@sub.domain.co.uk';
             const redacted = redactText(tabId, input, vault);
-            expect(redacted).toMatch(/Reach out at \[EMAIL_\d{5,6}\]/);
+            expect(redacted).toMatch(/Reach out at user\.\d{4}@example\.com/);
         });
 
         it('should correctly deduplicate identical emails', () => {
             const input = 'Contact john@example.com or john@example.com.';
             const redacted = redactText(tabId, input, vault);
-            const match = redacted.match(/\[EMAIL_\d{5,6}\]/);
+            const match = redacted.match(/user\.\d{4}@example\.com/);
             expect(match).toBeTruthy();
             expect(redacted).toBe(`Contact ${match![0]} or ${match![0]}.`);
         });
@@ -72,7 +72,7 @@ describe('Regex Engine & Luhn Validation', () => {
         it('should assign different tokens to different emails', () => {
             const input = 'A: a@test.com, B: b@test.com';
             const redacted = redactText(tabId, input, vault);
-            const matches = redacted.match(/\[EMAIL_\d{5,6}\]/g);
+            const matches = redacted.match(/user\.\d{4}@example\.com/g);
             expect(matches).toHaveLength(2);
             expect(matches![0]).not.toBe(matches![1]);
         });
@@ -81,29 +81,29 @@ describe('Regex Engine & Luhn Validation', () => {
     describe('Phone Numbers Redaction (PHONE)', () => {
         it('should redact standard US phone numbers with dashes', () => {
             const input = 'Call 555-123-4567 today.';
-            expect(redactText(tabId, input, vault)).toMatch(/Call \[PHONE_\d{5,6}\] today\./);
+            expect(redactText(tabId, input, vault)).toMatch(/Call \(000\) 000-\d{4} today\./);
         });
 
         it('should redact phone numbers with parentheses and spaces', () => {
             const input = 'Cell: (555) 123 4567';
-            expect(redactText(tabId, input, vault)).toMatch(/Cell: \[PHONE_\d{5,6}\]/);
+            expect(redactText(tabId, input, vault)).toMatch(/Cell: \(000\) 000-\d{4}/);
         });
 
         it('should redact phone numbers with country codes', () => {
             const input = 'International +1-555-123-4567';
-            expect(redactText(tabId, input, vault)).toMatch(/International \[PHONE_\d{5,6}\]/);
+            expect(redactText(tabId, input, vault)).toMatch(/International \(000\) 000-\d{4}/);
         });
 
         it('should redact phone numbers with dots', () => {
             const input = 'Dots: 555.123.4567';
-            expect(redactText(tabId, input, vault)).toMatch(/Dots: \[PHONE_\d{5,6}\]/);
+            expect(redactText(tabId, input, vault)).toMatch(/Dots: \(000\) 000-\d{4}/);
         });
     });
 
     describe('US Social Security Numbers (SSN)', () => {
         it('should redact valid formatted US SSNs', () => {
             const input = 'My SSN is 123-45-6789.';
-            expect(redactText(tabId, input, vault)).toMatch(/My SSN is \[SSN_\d{5,6}\]\./);
+            expect(redactText(tabId, input, vault)).toMatch(/My SSN is 000-00-\d{4}\./);
         });
 
         it('should ignore invalid area codes (000, 666, 900+)', () => {
@@ -124,12 +124,12 @@ describe('Regex Engine & Luhn Validation', () => {
     describe('Canadian Social Insurance Numbers (SIN)', () => {
         it('should redact valid Canadian SINs (passes Luhn)', () => {
             const validSIN = '046-454-286'; // Modulus 10 compliant
-            expect(redactText(tabId, validSIN, vault)).toMatch(/\[SIN_\d{5,6}\]/);
+            expect(redactText(tabId, validSIN, vault)).toMatch(/000-000-\d{4}/);
         });
 
         it('should redact valid Canadian SINs without dashes', () => {
             const validSIN = '046454286'; // Modulus 10 compliant
-            expect(redactText(tabId, validSIN, vault)).toMatch(/\[SIN_\d{5,6}\]/);
+            expect(redactText(tabId, validSIN, vault)).toMatch(/000-000-\d{4}/);
         });
 
         it('should reject invalid Canadian SINs (fails Luhn)', () => {
@@ -142,12 +142,12 @@ describe('Regex Engine & Luhn Validation', () => {
         it('should redact valid Visa cards (passes Luhn)', () => {
             // Visa prefix 4, 16 digits
             const validVisa = '4111111111111111'; // Common test card (passes Luhn)
-            expect(redactText(tabId, validVisa, vault)).toMatch(/\[CARD_\d{5,6}\]/);
+            expect(redactText(tabId, validVisa, vault)).toMatch(/0000-0000-0000-\d{4}/);
         });
 
         it('should redact valid MasterCard (passes Luhn)', () => {
             const validMC = '5555555555554444'; // Example valid luhn
-            expect(redactText(tabId, validMC, vault)).toMatch(/\[CARD_\d{5,6}\]/);
+            expect(redactText(tabId, validMC, vault)).toMatch(/0000-0000-0000-\d{4}/);
         });
 
         it('should ignore strings that look like cards but fail Luhn', () => {
@@ -161,7 +161,7 @@ describe('Regex Engine & Luhn Validation', () => {
             const input = 'Call 555-123-4567 or email test@example.com about 123-45-6789.';
             const redacted = redactText(tabId, input, vault);
 
-            expect(redacted).toMatch(/Call \[PHONE_\d{5,6}\] or email \[EMAIL_\d{5,6}\] about \[SSN_\d{5,6}\]\./);
+            expect(redacted).toMatch(/Call \(000\) 000-\d{4} or email user\.\d{4}@example\.com about 000-00-\d{4}\./);
         });
 
         it('should successfully unredact mixed tokens', () => {
@@ -172,7 +172,7 @@ describe('Regex Engine & Luhn Validation', () => {
         });
 
         it('should return token as-is if unredacting from an expired session', () => {
-            const fakeToken = '[EMAIL_99999]';
+            const fakeToken = 'user.9999@example.com';
             const restored = vault.unredactText(tabId, `Hello ${fakeToken}`);
             // Since it's not in the vault map, it should return the token unmodified
             expect(restored).toBe(`Hello ${fakeToken}`);

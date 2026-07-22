@@ -86,6 +86,7 @@ export function redactText(tabId: number, text: string, vault: VaultManager): st
 
     // 5. Phone Numbers
     redacted = redacted.replace(PHONE_REGEX, (match) => {
+        if (match.startsWith('000-000-')) return match; // Skip zero-masked SIN tokens
         return vault.redactEntity(tabId, 'PHONE', match);
     });
 

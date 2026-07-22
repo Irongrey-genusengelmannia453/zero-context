@@ -2,7 +2,7 @@ export interface TabVaultData {
     forward: Record<string, string>; // original -> token e.g., "john@doe.com" -> "[EMAIL_1]"
     reverse: Record<string, string>; // token -> original e.g., "[EMAIL_1]" -> "john@doe.com"
     counters: Record<string, number>; // type -> count e.g., "EMAIL" -> 1
-    sessionOffset: number;
+    sessionSalt: number;
 }
 
 export class VaultManager {
@@ -35,7 +35,7 @@ export class VaultManager {
                 forward: {},
                 reverse: {},
                 counters: {},
-                sessionOffset: Math.floor(Math.random() * 90000) + 10000
+                sessionSalt: Math.floor(Math.random() * 90) + 10
             };
         }
     }
@@ -65,7 +65,18 @@ export class VaultManager {
         tabData.counters[type]++;
 
         // 3. Generate Token
-        const token = `[${type}_${tabData.sessionOffset + tabData.counters[type]}]`;
+        const paddedCount = tabData.counters[type].toString().padStart(2, '0');
+        const pin = `${tabData.sessionSalt}${paddedCount}`;
+        
+        let token = '';
+        switch (type) {
+            case 'EMAIL': token = `user.${pin}@example.com`; break;
+            case 'PHONE': token = `(000) 000-${pin}`; break;
+            case 'SSN': token = `000-00-${pin}`; break;
+            case 'SIN': token = `000-000-${pin}`; break;
+            case 'CARD': token = `0000-0000-0000-${pin}`; break;
+            default: token = `[${type}_${pin}]`; break;
+        }
 
         // 4. Save to both maps
         tabData.forward[originalText] = token;
@@ -85,12 +96,10 @@ export class VaultManager {
             return text; // Nothing redacted for this tab
         }
 
-        // Replace all tokens like [EMAIL_1] with their reverse map value
-        // The regex looks for [TYPE_NUMBER] with a 5 or 6 digit number
-        return text.replace(/\[([A-Z]+_\d{5,6})\]/g, (match) => {
-            const original = tabData.reverse[match];
-            return original ? original : match; // fallback to token if not found
-        });
+        return Object.keys(tabData.reverse).reduce(
+            (acc, token) => acc.replaceAll(token, tabData.reverse[token]),
+            text
+        );
     }
 
     public async clearTab(tabId: number): Promise<void> {
