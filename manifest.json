@@ -33,6 +33,18 @@
             "js": [
                 "src/content.ts"
             ]
+        },
+        {
+            "matches": [
+                "https://chatgpt.com/*",
+                "https://claude.ai/*",
+                "https://gemini.google.com/*"
+            ],
+            "js": [
+                "src/injected.ts"
+            ],
+            "world": "MAIN",
+            "run_at": "document_start"
         }
     ]
 }
