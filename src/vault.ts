@@ -1,7 +1,7 @@
 export interface TabVaultData {
     forward: Record<string, string>; // original -> token e.g., "john@doe.com" -> "[EMAIL_1]"
     reverse: Record<string, string>; // token -> original e.g., "[EMAIL_1]" -> "john@doe.com"
-    counters: Record<string, number>; // type -> count e.g., "EMAIL" -> 1
+    globalCounter: number; // Single counter for all entities
     sessionSalt: number;
 }
 
@@ -34,7 +34,7 @@ export class VaultManager {
             this.cache[key] = {
                 forward: {},
                 reverse: {},
-                counters: {},
+                globalCounter: 0,
                 sessionSalt: Math.floor(Math.random() * 90) + 10
             };
         }
@@ -59,23 +59,42 @@ export class VaultManager {
         }
 
         // 2. Increment counter
-        if (!tabData.counters[type]) {
-            tabData.counters[type] = 0;
+        if (tabData.globalCounter === undefined) {
+            tabData.globalCounter = 0;
         }
-        tabData.counters[type]++;
+        tabData.globalCounter++;
 
         // 3. Generate Token
-        const paddedCount = tabData.counters[type].toString().padStart(2, '0');
-        const pin = `${tabData.sessionSalt}${paddedCount}`;
+        const rawId = `${tabData.sessionSalt}${tabData.globalCounter}`;
         
         let token = '';
         switch (type) {
-            case 'EMAIL': token = `user.${pin}@example.com`; break;
-            case 'PHONE': token = `(000) 000-${pin}`; break;
-            case 'SSN': token = `000-00-${pin}`; break;
-            case 'SIN': token = `000-000-${pin}`; break;
-            case 'CARD': token = `0000-0000-0000-${pin}`; break;
-            default: token = `[${type}_${pin}]`; break;
+            case 'EMAIL':
+                token = `user.${rawId}@example.com`;
+                break;
+            case 'PHONE': {
+                const p = rawId.padStart(10, '0');
+                token = `(${p.slice(0,3)}) ${p.slice(3,6)}-${p.slice(6)}`;
+                break;
+            }
+            case 'SSN': {
+                const ssn = rawId.padStart(9, '0');
+                token = `${ssn.slice(0,3)}-${ssn.slice(3,5)}-${ssn.slice(5)}`;
+                break;
+            }
+            case 'SIN': {
+                const sin = rawId.padStart(9, '0');
+                token = `${sin.slice(0,3)}-${sin.slice(3,6)}-${sin.slice(6)}`;
+                break;
+            }
+            case 'CARD': {
+                const c = rawId.padStart(16, '0');
+                token = `${c.slice(0,4)}-${c.slice(4,8)}-${c.slice(8,12)}-${c.slice(12)}`;
+                break;
+            }
+            default:
+                token = `[${type}_${rawId}]`;
+                break;
         }
 
         // 4. Save to both maps

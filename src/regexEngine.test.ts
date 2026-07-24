@@ -52,19 +52,19 @@ describe('Regex Engine & Luhn Validation', () => {
         it('should redact valid standard emails', () => {
             const input = 'My email is test@example.com.';
             const redacted = redactText(tabId, input, vault);
-            expect(redacted).toMatch(/My email is user\.\d{4}@example\.com\./);
+            expect(redacted).toMatch(/My email is user\.\d+@example\.com\./);
         });
 
         it('should redact emails with subdomains and plus addressing', () => {
             const input = 'Reach out at first.last+tag@sub.domain.co.uk';
             const redacted = redactText(tabId, input, vault);
-            expect(redacted).toMatch(/Reach out at user\.\d{4}@example\.com/);
+            expect(redacted).toMatch(/Reach out at user\.\d+@example\.com/);
         });
 
         it('should correctly deduplicate identical emails', () => {
             const input = 'Contact john@example.com or john@example.com.';
             const redacted = redactText(tabId, input, vault);
-            const match = redacted.match(/user\.\d{4}@example\.com/);
+            const match = redacted.match(/user\.\d+@example\.com/);
             expect(match).toBeTruthy();
             expect(redacted).toBe(`Contact ${match![0]} or ${match![0]}.`);
         });
@@ -72,7 +72,7 @@ describe('Regex Engine & Luhn Validation', () => {
         it('should assign different tokens to different emails', () => {
             const input = 'A: a@test.com, B: b@test.com';
             const redacted = redactText(tabId, input, vault);
-            const matches = redacted.match(/user\.\d{4}@example\.com/g);
+            const matches = redacted.match(/user\.\d+@example\.com/g);
             expect(matches).toHaveLength(2);
             expect(matches![0]).not.toBe(matches![1]);
         });
@@ -124,12 +124,12 @@ describe('Regex Engine & Luhn Validation', () => {
     describe('Canadian Social Insurance Numbers (SIN)', () => {
         it('should redact valid Canadian SINs (passes Luhn)', () => {
             const validSIN = '046-454-286'; // Modulus 10 compliant
-            expect(redactText(tabId, validSIN, vault)).toMatch(/000-000-\d{4}/);
+            expect(redactText(tabId, validSIN, vault)).toMatch(/000-000-\d{3}/);
         });
 
         it('should redact valid Canadian SINs without dashes', () => {
             const validSIN = '046454286'; // Modulus 10 compliant
-            expect(redactText(tabId, validSIN, vault)).toMatch(/000-000-\d{4}/);
+            expect(redactText(tabId, validSIN, vault)).toMatch(/000-000-\d{3}/);
         });
 
         it('should reject invalid Canadian SINs (fails Luhn)', () => {
@@ -161,7 +161,7 @@ describe('Regex Engine & Luhn Validation', () => {
             const input = 'Call 555-123-4567 or email test@example.com about 123-45-6789.';
             const redacted = redactText(tabId, input, vault);
 
-            expect(redacted).toMatch(/Call \(000\) 000-\d{4} or email user\.\d{4}@example\.com about 000-00-\d{4}\./);
+            expect(redacted).toMatch(/Call \(000\) 000-\d{4} or email user\.\d+@example\.com about 000-00-\d{4}\./);
         });
 
         it('should successfully unredact mixed tokens', () => {
