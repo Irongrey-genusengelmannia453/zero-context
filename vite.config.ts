@@ -5,6 +5,11 @@ import manifest from './manifest.json';
 export default defineConfig({
     plugins: [crx({ manifest })],
     build: {
-        target: 'esnext'
+        target: 'esnext',
+        rollupOptions: {
+            input: {
+                offscreen: 'src/offscreen/offscreen.html',
+            }
+        }
     }
 });

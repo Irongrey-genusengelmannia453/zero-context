@@ -1,9 +1,17 @@
 import { VaultManager } from './vault';
 import { redactText } from './regexEngine';
+import {
+    sendWorkerTask,
+    closeOffscreenDocument,
+    initOffscreenResponseListener,
+} from './offscreen/offscreen-manager';
 
 console.log("[ZeroContext] Background service worker active.");
 
 const vaultManager = new VaultManager();
+
+// Initialize the offscreen response listener for Worker round-trips
+initOffscreenResponseListener();
 
 // Ephemeral Memory Commitment - Flush tab state when closed
 chrome.tabs.onRemoved.addListener((tabId) => {
@@ -48,6 +56,29 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    // ─── Offscreen Worker Pipeline (no tab ID required) ─────
+    if (message.action === "WORKER_PING") {
+        sendWorkerTask('PING')
+            .then(response => sendResponse({ status: "SUCCESS", data: response }))
+            .catch(err => sendResponse({ status: "ERROR", data: (err as Error).message }));
+        return true;
+    }
+
+    if (message.action === "WORKER_HEAVY_WORKLOAD") {
+        sendWorkerTask('SIMULATE_HEAVY_WORKLOAD', message.payload)
+            .then(response => sendResponse({ status: "SUCCESS", data: response }))
+            .catch(err => sendResponse({ status: "ERROR", data: (err as Error).message }));
+        return true;
+    }
+
+    if (message.action === "CLOSE_OFFSCREEN") {
+        closeOffscreenDocument()
+            .then(() => sendResponse({ status: "SUCCESS", data: "Offscreen document closed." }))
+            .catch(err => sendResponse({ status: "ERROR", data: (err as Error).message }));
+        return true;
+    }
+
+    // ─── PII Redaction Pipeline (requires tab ID) ───────────
     const tabId = sender.tab?.id;
     if (!tabId) {
         sendResponse({ status: "ERROR", data: "No tab ID found." });
@@ -77,9 +108,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             else {
                 sendResponse({ status: "ERROR", data: "Unknown action." });
             }
-        } catch (error: any) {
+        } catch (error: unknown) {
+            const errMsg = error instanceof Error ? error.message : String(error);
             console.error("[ZeroContext] Error processing message:", error);
-            sendResponse({ status: "ERROR", data: error.message });
+            sendResponse({ status: "ERROR", data: errMsg });
         }
     })();
 
