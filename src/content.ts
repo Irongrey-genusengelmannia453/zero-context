@@ -1,6 +1,6 @@
 console.log("[ZeroContext] Content script initialized. Watching for inputs.");
 
-document.addEventListener("paste", async (event: ClipboardEvent) => {
+window.addEventListener("paste", async (event: ClipboardEvent) => {
     const activeElement = document.activeElement as HTMLElement;
 
     // 1. Verify we are pasting into a valid text area
@@ -17,6 +17,8 @@ document.addEventListener("paste", async (event: ClipboardEvent) => {
 
     // 2. Intercept the default paste behavior
     event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
     console.log("[ZeroContext] Intercepted text. Forwarding to background vault...");
 
     try {
@@ -36,7 +38,7 @@ document.addEventListener("paste", async (event: ClipboardEvent) => {
     } catch (error) {
         console.error("[ZeroContext] Message passing failed.", error);
     }
-});
+}, true);
 
 // Listener for native Ctrl+C or standard DOM copy events
 document.addEventListener("copy", (event: ClipboardEvent) => {
@@ -68,9 +70,10 @@ document.addEventListener("copy", (event: ClipboardEvent) => {
 });
 
 // Listener for intercepted programmatic clipboard writes from the MAIN world (e.g. Chat UI "Copy" button)
-document.addEventListener("zerocontext_intercept_copy", async (e: Event) => {
-    const customEvent = e as CustomEvent;
-    const { eventId, text } = customEvent.detail;
+window.addEventListener("message", async (e: MessageEvent) => {
+    if (e.source !== window || e.data?.type !== "zerocontext_intercept_copy") return;
+    
+    const { eventId, text } = e.data;
 
     if (!text || !text.trim()) {
         dispatchResponse(eventId, text);
@@ -96,11 +99,9 @@ document.addEventListener("zerocontext_intercept_copy", async (e: Event) => {
 });
 
 function dispatchResponse(eventId: string, finalStr: string) {
-    const responseEvent = new CustomEvent("zerocontext_unredact_response", {
-        detail: {
-            eventId: eventId,
-            text: finalStr
-        }
-    });
-    document.dispatchEvent(responseEvent);
+    window.postMessage({
+        type: "zerocontext_unredact_response",
+        eventId: eventId,
+        text: finalStr
+    }, "*");
 }
