@@ -11,7 +11,7 @@
 * **Build Tool:** Vite + `@crxjs/vite-plugin` (Manifest V3 automation).
 * **UI/View:** Vanilla HTML & DOM manipulation (strictly NO React, Vue, or complex state management).
 * **Styling:** Pico.css (Classless CSS framework).
-* **AI/ML:** Transformers.js (v3+) configured explicitly for **WebGPU acceleration** (`device: 'webgpu'`).
+* **AI/ML:** Transformers.js (v3+) configured explicitly for **WASM inference** (`device: 'wasm'`). (WebGPU and WASM pthreads are strictly incompatible with Chrome Manifest V3's ban on `blob:` scripts in extension pages).
 * **Testing:** Vitest.
 
 ## 3. The Redaction Engine (Zero-Trust Pipeline)
@@ -27,16 +27,18 @@ We operate on a strict Zero-Trust model. All text is assumed to contain PII unti
 * **Mechanism:** A lightweight custom lexer that separates structural code tokens (e.g., `function`, `class`, `{`, `}`) from User String Literals and Code Comments. 
 * **Routing:** Structural code bypasses ML completely. Extracted string literals (e.g., `"user_address": "123 main st"`) are forwarded to Layer 3.
 
-### Layer 3: WebGPU-Accelerated Neural Engine (15-30ms)
+### Layer 3: WASM Neural Engine (15-30ms)
 * **Targets:** Proper names, organizations, and unstructured addresses.
-* **Engine:** Quantized Token Classification (NER) via Transformers.js using WebGPU. 
+* **Engine:** Quantized Token Classification (NER) via Transformers.js using single-threaded WASM. 
 * **Mechanism:** Uses Subword (WordPiece) tokenization to natively catch typos (e.g., "jhon") and lowercase text without relying on fragile capitalization heuristics. All prose and all strings extracted from Layer 2 MUST pass through this layer.
 
 ## 4. Pipeline & Thread Isolation (Manifest V3)
 Heavy ML matrix math will freeze the host webpage's UI if executed on the main thread. We utilize a strict **3-Tier Pipeline**:
 1. **The Dispatcher (`background.ts`):** Listens to content scripts and manages the ephemeral Vault memory.
-2. **The Bridge (`offscreen-manager.ts` & `offscreen.html`):** A hidden Offscreen Document created dynamically to access DOM/Worker APIs that standard Service Workers cannot access. Includes a race-condition-safe Promise lock and spin-down lifecycle hooks.
-3. **The Engine (`worker.ts`):** An isolated Web Worker spawned by the Offscreen Document. This is where Transformers.js will live. Communication happens via strongly typed `taskId` mapping to handle asynchronous responses.
+2. **The Bridge (`offscreen-manager.ts` & `offscreen.ts`):** A hidden Offscreen Document that accesses DOM/Worker APIs standard Service Workers cannot access. Includes a race-condition-safe Promise lock.
+3. **The Sandbox (`sandbox.ts`):** An isolated iframe page injected by the Offscreen Document. This is where Transformers.js lives. 
+    * **CSP Bypass:** We use a manifest `"sandbox"` page because it has a relaxed CSP that explicitly allows `blob:` scripts, bypassing the extension-wide ban.
+    * **Cache Delegation:** Because sandbox pages have a `null` origin, they are banned from the Cache API. We implemented a custom `globalThis.fetch` interceptor in the sandbox that delegates caching network requests to the parent Offscreen document via `postMessage`, which then transfers the raw `ArrayBuffer` back with zero-copy overhead.
 
 ## 5. Ephemeral Memory (The Vault)
 * **Mechanism:** Intercepted entities are mapped to safe tokens (e.g., `john@doe.com` -> `[EMAIL_1]`).

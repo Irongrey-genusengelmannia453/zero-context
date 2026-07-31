@@ -4,6 +4,7 @@ import {
     sendWorkerTask,
     closeOffscreenDocument,
     initOffscreenResponseListener,
+    getOrCreateOffscreenDocument
 } from './offscreen/offscreen-manager';
 
 console.log("[ZeroContext] Background service worker active.");
@@ -12,6 +13,9 @@ const vaultManager = new VaultManager();
 
 // Initialize the offscreen response listener for Worker round-trips
 initOffscreenResponseListener();
+
+// Eagerly spin up the offscreen document for debugging/initialization
+getOrCreateOffscreenDocument().catch(err => console.error("Failed to create offscreen document:", err));
 
 // Ephemeral Memory Commitment - Flush tab state when closed
 chrome.tabs.onRemoved.addListener((tabId) => {

@@ -4,8 +4,48 @@
 // ─────────────────────────────────────────────────────────────
 
 import type { WorkerRequest, WorkerResponse } from './types';
+import { pipeline, env } from '@huggingface/transformers';
 
 console.log('[ZeroContext] Worker thread initialized.');
+
+// Configure environment to fetch models from HuggingFace and cache in browser
+env.allowLocalModels = false;
+env.useBrowserCache = true;
+
+// CRITICAL for Manifest V3: 
+// The WebGPU backend in ONNX Runtime uses Emscripten pthreads, which spawn Web Workers
+// from blob: URLs. Chrome's MV3 CSP blocks ALL blob: script execution, making WebGPU
+// fundamentally incompatible. We use the WASM backend instead, which is fully supported
+// via the 'wasm-unsafe-eval' CSP directive already in our manifest.
+//
+// We also disable multithreading (numThreads=1) because multi-threaded WASM also uses
+// blob: URLs for its pthread workers. Single-threaded WASM avoids this entirely.
+env.backends.onnx.wasm.numThreads = 1;
+env.backends.onnx.wasm.proxy = false;
+
+// Singleton pattern to load the NER model
+class PipelineSingleton {
+    static task = 'token-classification';
+    static model = 'Xenova/bert-base-NER';
+    static instance: any = null;
+
+    static async getInstance(progress_callback?: Function) {
+        if (this.instance === null) {
+            this.instance = pipeline(this.task as any, this.model, {
+                progress_callback,
+                device: 'wasm',
+            } as any);
+        }
+        return this.instance;
+    }
+}
+
+// Eagerly load the model on worker initialization
+PipelineSingleton.getInstance().then(() => {
+    console.log('[ZeroContext] WASM NER Model loaded successfully.');
+}).catch((err) => {
+    console.error('[ZeroContext] Failed to load WASM NER Model:', err);
+});
 
 self.addEventListener('message', (event: MessageEvent<WorkerRequest>) => {
     const { action, taskId, payload } = event.data;

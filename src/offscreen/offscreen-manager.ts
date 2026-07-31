@@ -116,8 +116,24 @@ export async function sendWorkerTask(
 
         pendingTasks.set(taskId, { resolve, reject, timer });
 
-        // Fire the message to the Offscreen Document
-        chrome.runtime.sendMessage(message).catch((err: Error) => {
+        // Fire the message to the Offscreen Document (with retry for initialization race condition)
+        const sendMessageWithRetry = async (msg: OffscreenRequest, retries = 10): Promise<void> => {
+            for (let i = 0; i < retries; i++) {
+                try {
+                    await chrome.runtime.sendMessage(msg);
+                    return; // Success
+                } catch (err: any) {
+                    if (err.message && err.message.includes('Receiving end does not exist') && i < retries - 1) {
+                        // Document created but script hasn't registered listener yet. Wait and retry.
+                        await new Promise(r => setTimeout(r, 50));
+                    } else {
+                        throw err;
+                    }
+                }
+            }
+        };
+
+        sendMessageWithRetry(message).catch((err: Error) => {
             clearTimeout(timer);
             pendingTasks.delete(taskId);
             reject(new Error(`MESSAGE_SEND_FAILED: ${err.message}`));

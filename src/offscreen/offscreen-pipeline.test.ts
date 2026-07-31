@@ -229,36 +229,41 @@ describe('Offscreen Pipeline', () => {
 
             await new Promise(r => setTimeout(r, 10));
 
-            const sentMessage = (chromeMock.runtime.sendMessage as Mock).mock.lastCall[0];
-            const taskId = sentMessage.taskId;
+            const sentMessage = (chromeMock.runtime.sendMessage as Mock).mock.lastCall?.[0];
+            const taskId = sentMessage?.taskId;
 
             listenerCallback({
+                target: 'BACKGROUND',
                 taskId: taskId,
                 status: 'SUCCESS',
                 data: { timestamp: 12345, userAgent: 'test-agent' }
             });
 
             const result = await taskPromise;
-            expect(result).toEqual({ timestamp: 12345, userAgent: 'test-agent' });
+            expect(result.status).toBe('SUCCESS');
+            expect(result.data).toEqual({ timestamp: 12345, userAgent: 'test-agent' });
         });
 
         it('should reject the task promise when an ERROR response is received', async () => {
             initOffscreenResponseListener();
-            const listenerCallback = (chromeMock.runtime.onMessage.addListener as Mock).mock.calls.at(-1)[0];
+            const listenerCallback = (chromeMock.runtime.onMessage.addListener as Mock).mock.calls.at(-1)?.[0];
 
             const taskPromise = sendWorkerTask('SIMULATE_HEAVY_WORKLOAD', undefined, 5000);
 
             await new Promise(r => setTimeout(r, 10));
 
-            const sentMessage = (chromeMock.runtime.sendMessage as Mock).mock.lastCall[0];
+            const sentMessage = (chromeMock.runtime.sendMessage as Mock).mock.lastCall?.[0];
 
             listenerCallback({
-                taskId: sentMessage.taskId,
+                target: 'BACKGROUND',
+                taskId: sentMessage?.taskId,
                 status: 'ERROR',
                 data: 'Web Worker out of memory'
             });
 
-            await expect(taskPromise).rejects.toThrow('Web Worker out of memory');
+            const result = await taskPromise;
+            expect(result.status).toBe('ERROR');
+            expect(result.data).toBe('Web Worker out of memory');
         });
 
 
