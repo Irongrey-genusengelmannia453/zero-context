@@ -36,10 +36,10 @@ export function extractTextForML(input: string): string[] {
     // Regex to match:
     // 1. Block comments /* ... */
     // 2. Line comments // ...
-    // 3. Double quote strings "..."
-    // 4. Single quote strings '...'
-    // 5. Backtick strings `...`
-    const tokenRegex = /\/\*[\s\S]*?\*\/|\/\/.*|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`/g;
+    // 3. Double quote strings "..." (no newlines allowed to prevent runaway captures)
+    // 4. Single quote strings '...' (no newlines allowed)
+    // 5. Backtick strings `...` (newlines allowed)
+    const tokenRegex = /\/\*[\s\S]*?\*\/|\/\/.*|"(?:\\.|[^"\\\r\n])*"|'(?:\\.|[^'\\\r\n])*'|`(?:\\.|[^`\\])*`/g;
     
     let match;
     while ((match = tokenRegex.exec(input)) !== null) {

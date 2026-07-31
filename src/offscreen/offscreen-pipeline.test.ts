@@ -272,12 +272,30 @@ describe('Offscreen Pipeline', () => {
     // ─────────────────────────────────────────────────────────
     // Test 4: Response Listener Registration
     // ─────────────────────────────────────────────────────────
-    describe('initOffscreenResponseListener', () => {
+    // ─────────────────────────────────────────────────────────
+    // Test 4: Response Listener Registration & Orphaned Messages
+    // ─────────────────────────────────────────────────────────
+    describe('initOffscreenResponseListener & Orphaned Messages', () => {
         it('should register a chrome.runtime.onMessage listener', () => {
             const callsBefore = (chromeMock.runtime.onMessage.addListener as Mock).mock.calls.length;
             initOffscreenResponseListener();
             const callsAfter = (chromeMock.runtime.onMessage.addListener as Mock).mock.calls.length;
             expect(callsAfter).toBe(callsBefore + 1);
+        });
+
+        it('should safely ignore orphaned messages (unknown taskId) without throwing', () => {
+            initOffscreenResponseListener();
+            const listenerCallback = (chromeMock.runtime.onMessage.addListener as Mock).mock.calls.at(-1)?.[0];
+            
+            // Send a fake message that doesn't match any pending task
+            expect(() => {
+                listenerCallback({
+                    target: 'BACKGROUND',
+                    taskId: 'non-existent-task-id',
+                    status: 'SUCCESS',
+                    data: 'Should be ignored'
+                });
+            }).not.toThrow();
         });
     });
 });

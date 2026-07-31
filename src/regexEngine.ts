@@ -40,7 +40,7 @@ function isValidUSSSN(ssn: string): boolean {
 }
 
 // Regex patterns
-const EMAIL_REGEX = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g;
+const EMAIL_REGEX = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,6}\b/g;
 const PHONE_REGEX = /(?<!\w)(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/g;
 const US_SSN_REGEX = /\b\d{3}-\d{2}-\d{4}\b/g;
 const CANADIAN_SIN_REGEX = /\b(?:\d{3}-\d{3}-\d{3}|\d{9})\b/g;

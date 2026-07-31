@@ -178,4 +178,37 @@ describe('Regex Engine & Luhn Validation', () => {
             expect(restored).toBe(`Hello ${fakeToken}`);
         });
     });
+
+    describe('Advanced Edge Cases & Security', () => {
+        it('should handle overlapping / directly adjacent matches without spaces', () => {
+            // Email directly followed by Phone but separated by non-word boundaries
+            const input = 'Email:test@example.com,Phone:555-123-4567';
+            const redacted = redactText(tabId, input, vault);
+            expect(redacted).toMatch(/Email:user\.\d+@example\.com,Phone:\(000\) 000-\d{4}/);
+        });
+
+        it('should enforce strict boundary checks to avoid partial matches (SSN/SIN lengths)', () => {
+            // A 10 digit number with dashes shouldn't trigger a 9-digit SSN match
+            const longString = '123-45-67890';
+            const redacted = redactText(tabId, longString, vault);
+            expect(redacted).toBe(longString); // No change because it violates word boundaries
+        });
+
+        it('should execute extremely long repeating strings without ReDoS (Denial of Service) freezing', () => {
+            // 50,000 character string of almost-valid emails to stress test the regex engine
+            const maliciousPayload = 'test@example.'.repeat(5000);
+            
+            const start = performance.now();
+            redactText(tabId, maliciousPayload, vault);
+            const duration = performance.now() - start;
+            
+            // Should execute in well under 50ms locally
+            expect(duration).toBeLessThan(50);
+        });
+    });
+
+    describe('TODO: Future Network IP Redaction', () => {
+        it.todo('should redact IPv4 addresses');
+        it.todo('should redact IPv6 addresses');
+    });
 });

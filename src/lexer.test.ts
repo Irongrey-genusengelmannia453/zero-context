@@ -63,4 +63,74 @@ describe('extractTextForML', () => {
             '"Here is some JSON: { \\"name\\": \\"test\\" }"'
         ]);
     });
+
+    describe('Advanced Edge Cases', () => {
+        it('should extract multi-line template literals', () => {
+            const code = `
+                const str = \`This is a 
+                multi-line template
+                literal with some text.\`;
+            `;
+            const result = extractTextForML(code);
+            expect(result).toEqual([
+                '`This is a \n                multi-line template\n                literal with some text.`'
+            ]);
+        });
+
+        it('should correctly ignore deep nested JSON keys and arrays', () => {
+            const nestedJson = `
+            {
+                "data": [
+                    { "id": 1, "description": "First item" },
+                    { "id": 2, "metadata": { "tag": "secret_tag", "values": ["a", "b"] } }
+                ]
+            }`;
+            const result = extractTextForML(nestedJson);
+            // Values should be extracted
+            expect(result).toContain('"First item"');
+            expect(result).toContain('"secret_tag"');
+            expect(result).toContain('"a"');
+            expect(result).toContain('"b"');
+            
+            // Keys should be completely ignored
+            expect(result).not.toContain('"data"');
+            expect(result).not.toContain('"id"');
+            expect(result).not.toContain('"description"');
+            expect(result).not.toContain('"metadata"');
+            expect(result).not.toContain('"tag"');
+            expect(result).not.toContain('"values"');
+        });
+
+        it('should handle prose that accidentally resembles code', () => {
+            // Because it contains `console.log`, the heuristic flags it as code.
+            // It will then use the regex lexer, which means it will ONLY extract things inside quotes!
+            // Wait, this is a known limitation of our current lightweight lexer. If we use a heuristic 
+            // and it false-positives, we lose the non-quoted prose. Let's document this exact behavior.
+            const prose = 'Here is how to use console.log("hello world") in JavaScript.';
+            const result = extractTextForML(prose);
+            // It will extract the quoted string, but drop the rest.
+            expect(result).toEqual(['"hello world"']);
+        });
+
+        it('should gracefully handle malformed JSON and extract whatever strings it can', () => {
+            const malformed = `
+            {
+                "key": "value",
+                "broken_string: 
+                "another_key": "another_value"
+            }`;
+            const result = extractTextForML(malformed);
+            // Even though it's malformed, it should find complete string literals
+            expect(result).toContain('"value"');
+            expect(result).toContain('"another_value"');
+            expect(result).not.toContain('"key"');
+            expect(result).not.toContain('"another_key"');
+        });
+
+        it('should safely handle properly escaped quotes inside strings', () => {
+            const code = `const a = "She said \\"Hello\\" today.";`;
+            const result = extractTextForML(code);
+            expect(result).toEqual(['"She said \\"Hello\\" today."']);
+        });
+    });
 });
