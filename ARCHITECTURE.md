@@ -1,46 +1,41 @@
 # ZeroContext: Master Architecture & Business Logic
 
-## 1. Project Goal & Business Logic
+## 1. Project Goal & Core Constraints
 **ZeroContext** is a lightweight, privacy-first, zero-latency Data Loss Prevention (DLP) Chrome Extension. 
-* **The Problem:** Professionals accidentally paste sensitive client data (Personally Identifiable Information - PII) into web-based LLMs (ChatGPT, Claude, Gemini), creating massive compliance and data breach vulnerabilities.
+* **The Problem:** Professionals accidentally paste sensitive client data (PII) into web-based LLMs (ChatGPT, Claude, Gemini).
 * **The Solution:** A two-way proxy that intercepts paste/copy events on specific AI domains. It masks sensitive data locally before it enters the text box, and restores the original data when the user copies the LLM's response.
-* **The Core Constraint:** **100% of processing must happen client-side (in-browser).** No data ever leaves the user's device. No cloud APIs, no external LLM calls, and scaling costs must remain at $0.
+* **The Constraint:** **100% of processing must happen client-side (in-browser).** No external LLM calls, zero cloud APIs, and $0 scaling costs.
 
-## 2. Tech Stack & Strict Constraints
-* **Language:** TypeScript (Strict typing enforced).
+## 2. Tech Stack & Rules
+* **Language:** TypeScript (Strict typing enforced. `any` is banned. Zod for boundaries).
 * **Build Tool:** Vite + `@crxjs/vite-plugin` (Manifest V3 automation).
-* **UI/View:** Vanilla HTML & DOM manipulation (strictly NO React, Vue, or complex state management).
+* **UI/View:** Vanilla HTML & DOM manipulation (No React/Vue).
 * **Styling:** Pico.css (Classless CSS framework).
-* **AI/ML:** Transformers.js (v3+) configured explicitly for **WASM inference** (`device: 'wasm'`). (WebGPU and WASM pthreads are strictly incompatible with Chrome Manifest V3's ban on `blob:` scripts in extension pages).
-* **Testing:** Vitest.
+* **AI/ML:** Transformers.js (v3+) strictly configured for **WASM inference** (`device: 'wasm'`).
 
 ## 3. The Redaction Engine (Zero-Trust Pipeline)
-We operate on a strict Zero-Trust model. All text is assumed to contain PII until scanned. To achieve zero false-negatives while maintaining sub-50ms latency, we utilize a deterministic 3-Layer Architecture:
+We operate on a 3-Layer Architecture to achieve zero false-negatives with sub-50ms latency:
 
 ### Layer 1: Deterministic Engine & Gazetteers (0-5ms)
-* **Targets:** Credit Cards (Luhn), SSNs, SINs, Emails, Phone Numbers, IPs, API Keys, and structured physical addresses.
-* **Mechanism:** Synchronous Regex execution + Compressed Geo-Trie (Gazetteer) for fuzzy-matching global cities and states.
-* **Execution:** Runs instantly in the Background Service Worker (`src/regexEngine.ts`).
+* **Targets:** Credit Cards (Luhn), SSNs, Emails, Phones, IPs.
+* **Execution:** Synchronous Regex execution in the Background Service Worker (`src/regexEngine.ts`).
 
 ### Layer 2: AST / Syntax Lexer (5ms)
-* **Goal:** Prevent False Positives on code structure while capturing hidden PII in variables/comments.
-* **Mechanism:** A lightweight custom lexer that separates structural code tokens (e.g., `function`, `class`, `{`, `}`) from User String Literals and Code Comments. 
-* **Routing:** Structural code bypasses ML completely. Extracted string literals (e.g., `"user_address": "123 main st"`) are forwarded to Layer 3.
+* **Goal:** Prevent False Positives on code structure while capturing hidden PII.
+* **Mechanism:** Separates structural code tokens from User String Literals and Code Comments. Structural code bypasses ML completely. Extracted string literals are forwarded to Layer 3.
 
 ### Layer 3: WASM Neural Engine (15-30ms)
-* **Targets:** Proper names, organizations, and unstructured addresses.
-* **Engine:** Quantized Token Classification (NER) via Transformers.js using single-threaded WASM. 
-* **Mechanism:** Uses Subword (WordPiece) tokenization to natively catch typos (e.g., "jhon") and lowercase text without relying on fragile capitalization heuristics. All prose and all strings extracted from Layer 2 MUST pass through this layer.
+* **Targets:** Proper names, organizations, unstructured addresses.
+* **Engine:** Quantized Token Classification (NER) via `Transformers.js` (e.g., `Xenova/bert-base-NER`).
 
-## 4. Pipeline & Thread Isolation (Manifest V3)
-Heavy ML matrix math will freeze the host webpage's UI if executed on the main thread. We utilize a strict **3-Tier Pipeline**:
+## 4. Pipeline & Thread Isolation (Manifest V3 Constraints)
+Heavy ML matrix math will freeze the host webpage if executed on the main thread. We utilize a strict **3-Tier Pipeline**:
 1. **The Dispatcher (`background.ts`):** Listens to content scripts and manages the ephemeral Vault memory.
-2. **The Bridge (`offscreen-manager.ts` & `offscreen.ts`):** A hidden Offscreen Document that accesses DOM/Worker APIs standard Service Workers cannot access. Includes a race-condition-safe Promise lock.
-3. **The Sandbox (`sandbox.ts`):** An isolated iframe page injected by the Offscreen Document. This is where Transformers.js lives. 
-    * **CSP Bypass:** We use a manifest `"sandbox"` page because it has a relaxed CSP that explicitly allows `blob:` scripts, bypassing the extension-wide ban.
-    * **Cache Delegation:** Because sandbox pages have a `null` origin, they are banned from the Cache API. We implemented a custom `globalThis.fetch` interceptor in the sandbox that delegates caching network requests to the parent Offscreen document via `postMessage`, which then transfers the raw `ArrayBuffer` back with zero-copy overhead.
+2. **The Bridge (`offscreen-manager.ts` & `offscreen.ts`):** Hidden Offscreen Document accessing DOM/Worker APIs.
+3. **The Sandbox (`sandbox.ts`):** An isolated iframe injected by the Offscreen Document to host Transformers.js.
 
-## 5. Ephemeral Memory (The Vault)
-* **Mechanism:** Intercepted entities are mapped to safe tokens (e.g., `john@doe.com` -> `[EMAIL_1]`).
-* **Storage:** Data is kept in an in-memory dictionary `TabVaultData`, separated strictly by `tabId`. It is backed up asynchronously to `chrome.storage.session`.
-* **Security:** When a tab is closed or navigated away from an AI domain, the `tabId` vault is immediately flushed from memory.
+## 5. Critical Technical Learnings & Hard Rules
+* **The `blob:` Ban (WebGPU is impossible):** Chrome MV3 strictly enforces CSPs that ban `blob:` URLs in extension pages/workers. We MUST use a Sandboxed Iframe (which allows custom CSPs) to run WASM execution.
+* **Null-Origin Cache Delegation:** Sandbox pages run with a `null` origin, causing `SecurityError` if accessing `CacheStorage`. We must intercept `globalThis.fetch` in the Sandbox and delegate caching network requests via `postMessage` to the Offscreen Document, which transfers the `ArrayBuffer` back.
+* **The CRXJS Sandbox Bug:** `@crxjs/vite-plugin` silently strips the `"sandbox"` CSP directive. We use a custom Vite plugin to manually inject the `"sandbox"` CSP into the built `dist/manifest.json`.
+* **Ephemeral Vault:** Mapped entities (e.g., `[EMAIL_1]`) are stored in `TabVaultData` separated by `tabId`. They must be flushed immediately when the tab closes.
