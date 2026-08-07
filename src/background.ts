@@ -6,6 +6,7 @@ import {
     initOffscreenResponseListener,
     getOrCreateOffscreenDocument
 } from './offscreen/offscreen-manager';
+import { extractTextForML } from './lexer';
 
 console.log("[ZeroContext] Background service worker active.");
 
@@ -14,8 +15,7 @@ const vaultManager = new VaultManager();
 // Initialize the offscreen response listener for Worker round-trips
 initOffscreenResponseListener();
 
-// Eagerly spin up the offscreen document for debugging/initialization
-getOrCreateOffscreenDocument().catch(err => console.error("Failed to create offscreen document:", err));
+
 
 // Ephemeral Memory Commitment - Flush tab state when closed
 chrome.tabs.onRemoved.addListener((tabId) => {
@@ -100,12 +100,93 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             await vaultManager.ensureHydrated();
 
             if (message.action === "REDACT_TEXT") {
+                const pipelineStart = performance.now();
                 console.log("[ZeroContext] Redacting payload...");
-                const redacted = redactText(tabId, message.payload, vaultManager);
+                const storage = await chrome.storage.local.get(['engineMode', 'isRedactionEnabled']);
+                if (storage.isRedactionEnabled === false) {
+                    sendResponse({ status: "SUCCESS", data: message.payload });
+                    return;
+                }
+
+                let redacted = message.payload;
+                const isDeepMode = storage.engineMode === 'deep' || storage.engineMode === undefined;
+                console.log(`[ZeroContext] Engine mode: ${storage.engineMode ?? 'deep (default)'}, isDeepMode: ${isDeepMode}`);
+                
+                // Layer 2 & 3: Neural Engine (Run BEFORE regex so it doesn't trip on regex tokens)
+                if (isDeepMode) {
+                    const stringsToProcess = extractTextForML(redacted);
+                    console.log(`[ZeroContext] extractTextForML returned ${stringsToProcess.length} string(s), total length: ${stringsToProcess.reduce((a, s) => a + s.length, 0)}`);
+                    
+                    if (stringsToProcess.length > 0) {
+                        try {
+                            const workerStart = performance.now();
+                            console.log("[ZeroContext] Sending PROCESS_TEXT to worker...");
+                            const response = await sendWorkerTask('PROCESS_TEXT', { texts: stringsToProcess });
+                            const workerEnd = performance.now();
+                            console.log(`[ZeroContext] Worker responded in ${(workerEnd - workerStart).toFixed(0)}ms, status: ${response.status}, durationMs: ${response.durationMs ?? 'N/A'}`);
+                            console.log(`[ZeroContext] response.data type: ${typeof response.data}, isArray: ${Array.isArray(response.data)}`);
+                            
+                            if (response.status === 'ERROR') {
+                                console.error("[ZeroContext] Worker returned ERROR:", response.data);
+                            } else {
+                                const nerResults = response.data as Array<Array<{ word: string, entity_group?: string, entity?: string, score: number }>>;
+                                console.log(`[ZeroContext] NER results outer length: ${nerResults?.length ?? 'null'}`);
+                                
+                                if (nerResults && nerResults.length > 0) {
+                                    for (const entities of nerResults) {
+                                        console.log(`[ZeroContext] Processing entity batch: ${entities?.length ?? 'null'} entities`);
+                                        if (!entities || !Array.isArray(entities)) {
+                                            console.error("[ZeroContext] entities is not an array:", typeof entities, entities);
+                                            continue;
+                                        }
+                                        
+                                        let searchIndex = 0;
+                                        for (const ent of entities) {
+                                            // Filter low confidence and non-entities
+                                            if (ent.score > 0.6) {
+                                                const type = ent.entity_group || ent.entity?.replace(/^[BI]-/, '') || 'PII';
+                                                if (type !== 'O') {
+                                                    const cleanWord = ent.word.replace(/^##/, '');
+                                                    const token = vaultManager.redactEntity(tabId, type, cleanWord);
+                                                    
+                                                    const matchIndex = redacted.indexOf(cleanWord, searchIndex);
+                                                    if (matchIndex !== -1) {
+                                                        redacted = redacted.substring(0, matchIndex) + token + redacted.substring(matchIndex + cleanWord.length);
+                                                        searchIndex = matchIndex + token.length;
+                                                        console.log(`[ZeroContext] Replaced "${cleanWord}" -> ${token}`);
+                                                    } else {
+                                                        console.warn(`[ZeroContext] FAILED to find "${cleanWord}" after index ${searchIndex}`);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    console.warn("[ZeroContext] NER results empty or null");
+                                }
+                            }
+                        } catch (err) {
+                            console.error("[ZeroContext] NER Error (full):", err);
+                            console.error("[ZeroContext] NER Error message:", err instanceof Error ? err.message : String(err));
+                            console.error("[ZeroContext] NER Error stack:", err instanceof Error ? err.stack : 'no stack');
+                        }
+                    }
+                }
+                
+                // Layer 1: Deterministic Redaction (Regex engine cleans up anything ML missed like cards/emails)
+                redacted = redactText(tabId, redacted, vaultManager);
+                
+                const pipelineEnd = performance.now();
+                console.log(`[ZeroContext] Total pipeline: ${(pipelineEnd - pipelineStart).toFixed(0)}ms`);
                 sendResponse({ status: "SUCCESS", data: redacted });
             } 
             else if (message.action === "UNREDACT_TEXT") {
                 console.log("[ZeroContext] Un-redacting payload...");
+                const storage = await chrome.storage.local.get(['isRedactionEnabled']);
+                if (storage.isRedactionEnabled === false) {
+                    sendResponse({ status: "SUCCESS", data: message.payload });
+                    return;
+                }
                 const restored = vaultManager.unredactText(tabId, message.payload);
                 sendResponse({ status: "SUCCESS", data: restored });
             } 

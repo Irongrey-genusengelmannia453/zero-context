@@ -30,7 +30,32 @@ window.addEventListener("paste", async (event: ClipboardEvent) => {
 
         if (response && response.status === "SUCCESS") {
             // 4. Insert at cursor & preserve Undo stack
-            document.execCommand("insertText", false, response.data);
+            const success = document.execCommand("insertText", false, response.data);
+            
+            // Fallback for expired user gesture (e.g. background ML took > 1s)
+            if (!success) {
+                const selection = window.getSelection();
+                if (selection && selection.rangeCount > 0) {
+                    const range = selection.getRangeAt(0);
+                    range.deleteContents();
+                    const textNode = document.createTextNode(response.data);
+                    range.insertNode(textNode);
+                    range.setStartAfter(textNode);
+                    range.setEndAfter(textNode);
+                    selection.removeAllRanges();
+                    selection.addRange(range);
+                    
+                    // Dispatch input event so React/ProseMirror updates its state
+                    activeElement.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
+                } else if (activeElement.tagName === "TEXTAREA" || activeElement.tagName === "INPUT") {
+                    const input = activeElement as HTMLInputElement;
+                    const start = input.selectionStart || 0;
+                    const end = input.selectionEnd || 0;
+                    input.value = input.value.substring(0, start) + response.data + input.value.substring(end);
+                    input.selectionStart = input.selectionEnd = start + response.data.length;
+                    input.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
+                }
+            }
             console.log("[ZeroContext] Successfully injected redacted text.");
         } else {
             console.error("[ZeroContext] Background script failed to process text.");

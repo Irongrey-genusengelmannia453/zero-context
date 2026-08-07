@@ -13,9 +13,11 @@ function isLikelyCodeOrJson(input: string): boolean {
         // Continue
     }
 
-    // 2. Common Code Keywords
-    const codeKeywords = /\b(function|class|const|let|var|import|export|interface|type|console\.log|if|else|for|while)\b/;
-    if (codeKeywords.test(input)) return true;
+    // 2. Common Code patterns (not just single words which occur in English)
+    if (/\b(?:const|let|var)\s+\w+\s*=/.test(input)) return true;
+    if (/\bfunction\s*\w*\s*\(/.test(input)) return true;
+    if (/\b(?:import|export)\s+.*?\s+from\b/.test(input)) return true;
+    if (/\bconsole\.log\s*\(/.test(input)) return true;
 
     // 3. JSON fragment / Object literal (e.g., "key": "value" or "key": [ )
     if (/".*?"\s*:\s*(?:".*?"|\d+|true|false|null|[{[])/.test(input)) return true;

@@ -44,8 +44,8 @@ const EMAIL_REGEX = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,6}\b/g;
 const PHONE_REGEX = /(?<!\w)(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/g;
 const US_SSN_REGEX = /\b\d{3}-\d{2}-\d{4}\b/g;
 const CANADIAN_SIN_REGEX = /\b(?:\d{3}-\d{3}-\d{3}|\d{9})\b/g;
-// Basic CC regex (13 to 19 digits with optional spaces/dashes)
-const CC_REGEX = /\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|2(?:22[1-9]|2[3-9][0-9]|[3-6][0-9]{2}|7[0-1][0-9]|720)[0-9]{12}|3[47][0-9]{13}|3(?:0[0-5]|[68][0-9])[0-9]{11}|6(?:011|5[0-9]{2})[0-9]{12}|(?:2131|1800|35\d{3})\d{11})(?:[\s-]*\d+)*\b/g;
+// Looser CC regex to allow spaces/dashes between digits, validated later by Luhn
+const CC_REGEX = /\b(?:\d[\s-]*?){13,19}\b/g;
 
 export function redactText(tabId: number, text: string, vault: VaultManager): string {
     let redacted = text;
