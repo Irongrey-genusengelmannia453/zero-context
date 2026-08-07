@@ -22,10 +22,16 @@ let creationPromise: Promise<void> | null = null;
 export async function getOrCreateOffscreenDocument(): Promise<void> {
     // Fast path — document already alive
     const exists = await chrome.offscreen.hasDocument();
-    if (exists) return;
+    if (exists) {
+        console.log('[ZeroContext:OffscreenMgr] Document already exists, reusing.');
+        return;
+    }
+
+    console.log('[ZeroContext:OffscreenMgr] Document does NOT exist, creating new one...');
 
     // If a creation is already in-flight, piggyback on it
     if (creationPromise) {
+        console.log('[ZeroContext:OffscreenMgr] Creation already in-flight, piggybacking.');
         return creationPromise;
     }
 
@@ -39,6 +45,7 @@ export async function getOrCreateOffscreenDocument(): Promise<void> {
 
     try {
         await creationPromise;
+        console.log('[ZeroContext:OffscreenMgr] Document created successfully.');
     } finally {
         // Release the lock regardless of success/failure
         creationPromise = null;
@@ -122,8 +129,9 @@ export async function sendWorkerTask(
                 try {
                     await chrome.runtime.sendMessage(msg);
                     return; // Success
-                } catch (err: any) {
-                    if (err.message && err.message.includes('Receiving end does not exist') && i < retries - 1) {
+                } catch (err: unknown) {
+                    const errorMsg = err instanceof Error ? err.message : String(err);
+                    if (errorMsg.includes('Receiving end does not exist') && i < retries - 1) {
                         // Document created but script hasn't registered listener yet. Wait and retry.
                         await new Promise(r => setTimeout(r, 50));
                     } else {

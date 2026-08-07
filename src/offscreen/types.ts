@@ -5,12 +5,13 @@
 
 // --- Worker-level message contracts ---
 
-export type WorkerAction = 'PING' | 'SIMULATE_HEAVY_WORKLOAD';
+export type WorkerAction = 'PING' | 'SIMULATE_HEAVY_WORKLOAD' | 'PROCESS_TEXT';
 
 /** Default timeout thresholds (ms) per worker action. */
 export const WORKER_TIMEOUTS: Record<WorkerAction, number> = {
     PING: 3_000,
     SIMULATE_HEAVY_WORKLOAD: 30_000,
+    PROCESS_TEXT: 30_000,
 };
 
 export interface WorkerRequest {

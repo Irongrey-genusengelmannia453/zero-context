@@ -37,24 +37,30 @@ window.addEventListener('message', async (event: MessageEvent) => {
 
     // Handle cache-delegated fetch requests from the sandbox
     if (data.action === 'FETCH_REQUEST') {
+        const shortUrl = (data.url as string).split('/').slice(-2).join('/');
+        console.log(`[ZeroContext:Offscreen] Fetch delegation request: ${shortUrl}`);
         try {
             const cache = await caches.open('zerocontext-models');
             let response = await cache.match(data.url);
             
             if (!response) {
-                console.log(`[ZeroContext] Downloading model file to cache: ${data.url}`);
+                console.log(`[ZeroContext:Offscreen] Cache MISS — downloading: ${shortUrl}`);
                 response = await fetch(data.url, data.init);
                 if (response.ok) {
                     await cache.put(data.url, response.clone());
+                    console.log(`[ZeroContext:Offscreen] Cached: ${shortUrl}`);
+                } else {
+                    console.error(`[ZeroContext:Offscreen] Download failed (${response.status}): ${shortUrl}`);
                 }
             } else {
-                console.log(`[ZeroContext] Serving model file from cache: ${data.url}`);
+                console.log(`[ZeroContext:Offscreen] Cache HIT: ${shortUrl}`);
             }
             
             const arrayBuffer = await response.arrayBuffer();
             const headers: Record<string, string> = {};
             response.headers.forEach((value, key) => { headers[key] = value; });
             
+            console.log(`[ZeroContext:Offscreen] Sending ${arrayBuffer.byteLength} bytes back to sandbox for: ${shortUrl}`);
             // Transfer the ArrayBuffer with zero-copy overhead
             event.source?.postMessage({
                 action: 'FETCH_RESPONSE',
@@ -63,14 +69,23 @@ window.addEventListener('message', async (event: MessageEvent) => {
                 buffer: arrayBuffer,
                 headers
             }, { targetOrigin: '*', transfer: [arrayBuffer] });
-        } catch (err: any) {
+        } catch (err: unknown) {
+            const errorMsg = err instanceof Error ? err.message : String(err);
+            console.error(`[ZeroContext:Offscreen] Fetch delegation error: ${errorMsg}`);
             event.source?.postMessage({
                 action: 'FETCH_RESPONSE',
                 requestId: data.requestId,
                 status: 'ERROR',
-                error: err.message
+                error: errorMsg
             }, '*');
         }
+        return;
+    }
+
+    // Relay sandbox console logs to the offscreen console (visible to developer)
+    if (data.action === 'SANDBOX_LOG') {
+        const level = data.level === 'error' ? 'error' : data.level === 'warn' ? 'warn' : 'log';
+        console[level](`[ZeroContext:Sandbox→Offscreen] ${data.message}`);
         return;
     }
 
@@ -94,21 +109,29 @@ window.addEventListener('message', async (event: MessageEvent) => {
 
 // ─── Chrome runtime message listener (Background → Offscreen) ──
 chrome.runtime.onMessage.addListener(
-    (message: OffscreenRequest, _sender, sendResponse) => {
+    (message: OffscreenRequest, _sender, _sendResponse) => {
         // Discriminator gate — only process messages targeted at us
         if (message.target !== 'OFFSCREEN') return false;
 
         const { taskId, workerAction, payload } = message;
+        console.log(`[ZeroContext:Offscreen] Received task ${taskId} (${workerAction})`);
 
         // Register callback for when the sandbox responds
         pendingCallbacks.set(taskId, (sandboxResponse: WorkerResponse) => {
-            // Route response back to Background via sendResponse
-            sendResponse({
+            console.log(`[ZeroContext:Offscreen] Sandbox responded for task ${taskId}, routing to background...`);
+            // CRITICAL FIX: Use chrome.runtime.sendMessage() to send the response
+            // as a NEW message to the background. The background's initOffscreenResponseListener
+            // is listening on chrome.runtime.onMessage for messages with target: 'BACKGROUND'.
+            // Previously this used sendResponse(), but that sends via the request-reply channel
+            // which the background was NOT listening on — causing every response to be lost.
+            chrome.runtime.sendMessage({
                 target: 'BACKGROUND',
                 status: sandboxResponse.status,
                 taskId: sandboxResponse.taskId,
                 data: sandboxResponse.data,
                 durationMs: sandboxResponse.durationMs,
+            }).catch((err: unknown) => {
+                console.error(`[ZeroContext:Offscreen] Failed to route response to background:`, err);
             });
         });
 
@@ -119,7 +142,7 @@ chrome.runtime.onMessage.addListener(
             payload,
         }, '*');
 
-        // CRITICAL: Return true to keep the async sendResponse channel open
-        return true;
+        // No need to return true since we're not using sendResponse
+        return false;
     },
 );
