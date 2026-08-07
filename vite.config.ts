@@ -25,6 +25,7 @@ export default defineConfig(() => {
             }
         ],
     build: {
+        modulePreload: false,
         target: 'esnext',
         rollupOptions: {
             input: {
