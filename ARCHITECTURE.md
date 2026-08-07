@@ -26,7 +26,7 @@ We operate on a 3-Layer Architecture to achieve zero false-negatives with sub-50
 
 ### Layer 3: WASM Neural Engine (15-30ms)
 * **Targets:** Proper names, organizations, unstructured addresses.
-* **Engine:** Quantized Token Classification (NER) via `Transformers.js` (e.g., `Xenova/bert-base-NER`).
+* **Engine:** Quantized Token Classification (NER) via `Transformers.js` (e.g., `Xenova/distilbert-base-multilingual-cased-ner-hrl` using `quantized: true`).
 
 ## 4. Pipeline & Thread Isolation (Manifest V3 Constraints)
 Heavy ML matrix math will freeze the host webpage if executed on the main thread. We utilize a strict **3-Tier Pipeline**:
@@ -35,7 +35,9 @@ Heavy ML matrix math will freeze the host webpage if executed on the main thread
 3. **The Sandbox (`sandbox.ts`):** An isolated iframe injected by the Offscreen Document to host Transformers.js.
 
 ## 5. Critical Technical Learnings & Hard Rules
-* **The `blob:` Ban (WebGPU is impossible):** Chrome MV3 strictly enforces CSPs that ban `blob:` URLs in extension pages/workers. We MUST use a Sandboxed Iframe (which allows custom CSPs) to run WASM execution.
-* **Null-Origin Cache Delegation:** Sandbox pages run with a `null` origin, causing `SecurityError` if accessing `CacheStorage`. We must intercept `globalThis.fetch` in the Sandbox and delegate caching network requests via `postMessage` to the Offscreen Document, which transfers the `ArrayBuffer` back.
+* **The `blob:` Ban (WebGPU is impossible):** Chrome MV3 strictly enforces CSPs that ban `blob:` URLs in extension pages/workers. We MUST use a Sandboxed Iframe (which allows custom CSPs) to run WASM execution. We also strictly disable WebGPU probing (`env.backends.onnx.wasm.proxy = false`) to avoid crash-inducing `requestAdapter()` warnings.
+* **Null-Origin Cache Delegation:** Sandbox pages run with a `null` origin, causing `SecurityError` if accessing `CacheStorage`. We must intercept `globalThis.fetch` in the Sandbox and delegate caching network requests via `postMessage` to the Offscreen Document, which transfers the `ArrayBuffer` back. This process requires a strict timeout (e.g., 120s) to prevent the Sandbox Promise from hanging infinitely.
+* **Structured Clone Serialization Loss:** Custom class instances (like `Transformers.js` outputs) lose methods and properties when sent via `postMessage`. We must *explicitly map* model outputs to plain JSON-safe arrays before sending from the Sandbox to the Offscreen.
+* **Background Response Routing:** When routing `postMessage` responses from the Sandbox through the Offscreen to the Background, we cannot use the `sendResponse()` callback inside `chrome.runtime.onMessage` because the Background is listening on a new channel. The Offscreen must initiate a *new* `chrome.runtime.sendMessage()` back to the Background script.
 * **The CRXJS Sandbox Bug:** `@crxjs/vite-plugin` silently strips the `"sandbox"` CSP directive. We use a custom Vite plugin to manually inject the `"sandbox"` CSP into the built `dist/manifest.json`.
 * **Ephemeral Vault:** Mapped entities (e.g., `[EMAIL_1]`) are stored in `TabVaultData` separated by `tabId`. They must be flushed immediately when the tab closes.
