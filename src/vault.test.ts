@@ -119,19 +119,19 @@ describe('VaultManager', () => {
             const token3 = vault.redactEntity(1, 'ORGANIZATION', 'Google');
 
             // Dot style ensures no square brackets or XML tags
-            expect(token1).toMatch(/^PERSON\.\d+$/);
-            expect(token2).toMatch(/^LOCATION\.\d+$/);
-            expect(token3).toMatch(/^ORGANIZATION\.\d+$/);
+            expect(token1).toMatch(/^PERSON\.[a-z0-9]+_\d+$/);
+            expect(token2).toMatch(/^LOCATION\.[a-z0-9]+_\d+$/);
+            expect(token3).toMatch(/^ORGANIZATION\.[a-z0-9]+_\d+$/);
         });
 
         it('should format generic fallbacks (PII) as PII.ID', () => {
             const token = vault.redactEntity(1, 'PII', 'Some secret');
-            expect(token).toMatch(/^PII\.\d+$/);
+            expect(token).toMatch(/^PII\.[a-z0-9]+_\d+$/);
         });
 
         it('should correctly unredact Dot style tokens', () => {
             const token = vault.redactEntity(2, 'PERSON', 'Jane Smith');
-            expect(token).toMatch(/^PERSON\.\d+$/);
+            expect(token).toMatch(/^PERSON\.[a-z0-9]+_\d+$/);
             
             const input = `Hello ${token}, how are you?`;
             const restored = vault.unredactText(2, input);
@@ -145,8 +145,8 @@ describe('VaultManager', () => {
             const aliasToken1 = vault.redactAlias(1, 'Michael Thompson', 'Michael');
             const aliasToken2 = vault.redactAlias(1, 'Michael Thompson', 'michael');
 
-            expect(aliasToken1).toMatch(new RegExp(`^${canonicalToken}\\.\\d+$`));
-            expect(aliasToken2).toMatch(new RegExp(`^${canonicalToken}\\.\\d+$`));
+            expect(aliasToken1).toMatch(new RegExp(`^${canonicalToken}_\\d+$`));
+            expect(aliasToken2).toMatch(new RegExp(`^${canonicalToken}_\\d+$`));
             expect(aliasToken1).not.toBe(aliasToken2);
 
             const input = `Both ${canonicalToken} and ${aliasToken1} and ${aliasToken2} are here.`;

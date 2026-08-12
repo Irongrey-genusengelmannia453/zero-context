@@ -1,8 +1,10 @@
 export interface TabVaultData {
-    forward: Record<string, string>; // original -> token e.g., "john@doe.com" -> "[EMAIL_1]"
-    reverse: Record<string, string>; // token -> original e.g., "[EMAIL_1]" -> "john@doe.com"
+    forward: Record<string, string>; // original -> token e.g., "john@doe.com" -> "user.5811@example.com"
+    reverse: Record<string, string>; // token -> original e.g., "user.5811@example.com" -> "john@doe.com"
     globalCounter: number; // Single counter for all entities
-    sessionSalt: number;
+    sessionSalt?: number; // legacy
+    alphaSalt?: string;
+    numericSalt?: string;
 }
 
 export class VaultManager {
@@ -31,11 +33,13 @@ export class VaultManager {
     private initTabIfNeeded(tabId: number): void {
         const key = tabId.toString();
         if (!this.cache[key]) {
+            const shortTab = String(tabId % 100).padStart(2, '0');
             this.cache[key] = {
                 forward: {},
                 reverse: {},
                 globalCounter: 0,
-                sessionSalt: Math.floor(Math.random() * 90) + 10
+                alphaSalt: Math.random().toString(36).substring(2, 4) + shortTab,
+                numericSalt: String(Math.floor(Math.random() * 9) + 1) + shortTab
             };
         }
     }
@@ -64,36 +68,47 @@ export class VaultManager {
         }
         tabData.globalCounter++;
 
+        // Backwards compatibility for hydration
+        if (!tabData.alphaSalt) {
+            const shortTab = String(tabId % 100).padStart(2, '0');
+            tabData.alphaSalt = Math.random().toString(36).substring(2, 4) + shortTab;
+        }
+        if (!tabData.numericSalt) {
+            const shortTab = String(tabId % 100).padStart(2, '0');
+            tabData.numericSalt = String(Math.floor(Math.random() * 9) + 1) + shortTab;
+        }
+
         // 3. Generate Token
-        const rawId = `${tabData.sessionSalt}${tabData.globalCounter}`;
-        
         let token = '';
+        const numericId = `${tabData.numericSalt}${tabData.globalCounter}`;
+        const alphaId = `${tabData.alphaSalt}_${tabData.globalCounter}`;
+
         switch (type) {
             case 'EMAIL':
-                token = `user.${rawId}@example.com`;
+                token = `user.${numericId}@example.com`;
                 break;
             case 'PHONE': {
-                const p = rawId.padStart(10, '0');
-                token = `(${p.slice(0,3)}) ${p.slice(3,6)}-${p.slice(6)}`;
+                const p = numericId.padStart(10, '0');
+                token = `(${p.slice(0, 3)}) ${p.slice(3, 6)}-${p.slice(6)}`;
                 break;
             }
             case 'SSN': {
-                const ssn = rawId.padStart(9, '0');
-                token = `${ssn.slice(0,3)}-${ssn.slice(3,5)}-${ssn.slice(5)}`;
+                const ssn = numericId.padStart(9, '0');
+                token = `${ssn.slice(0, 3)}-${ssn.slice(3, 5)}-${ssn.slice(5)}`;
                 break;
             }
             case 'SIN': {
-                const sin = rawId.padStart(9, '0');
-                token = `${sin.slice(0,3)}-${sin.slice(3,6)}-${sin.slice(6)}`;
+                const sin = numericId.padStart(9, '0');
+                token = `${sin.slice(0, 3)}-${sin.slice(3, 6)}-${sin.slice(6)}`;
                 break;
             }
             case 'CARD': {
-                const c = rawId.padStart(16, '0');
-                token = `${c.slice(0,4)}-${c.slice(4,8)}-${c.slice(8,12)}-${c.slice(12)}`;
+                const c = numericId.padStart(16, '0');
+                token = `${c.slice(0, 4)}-${c.slice(4, 8)}-${c.slice(8, 12)}-${c.slice(12)}`;
                 break;
             }
             default:
-                token = `${type}.${rawId}`;
+                token = `${type}.${alphaId}`;
                 break;
         }
 
@@ -122,8 +137,8 @@ export class VaultManager {
         }
 
         tabData.globalCounter++;
-        const token = `${canonicalToken}.${tabData.globalCounter}`;
-        
+        const token = `${canonicalToken}_${tabData.globalCounter}`;
+
         tabData.forward[exactMatch] = token;
         tabData.reverse[token] = exactMatch;
 

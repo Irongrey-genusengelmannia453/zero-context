@@ -81,29 +81,29 @@ describe('Regex Engine & Luhn Validation', () => {
     describe('Phone Numbers Redaction (PHONE)', () => {
         it('should redact standard US phone numbers with dashes', () => {
             const input = 'Call 555-123-4567 today.';
-            expect(redactText(tabId, input, vault)).toMatch(/Call \(000\) 000-\d{4} today\./);
+            expect(redactText(tabId, input, vault)).toMatch(/Call \(\d{3}\) \d{3}-\d{4} today\./);
         });
 
         it('should redact phone numbers with parentheses and spaces', () => {
             const input = 'Cell: (555) 123 4567';
-            expect(redactText(tabId, input, vault)).toMatch(/Cell: \(000\) 000-\d{4}/);
+            expect(redactText(tabId, input, vault)).toMatch(/Cell: \(\d{3}\) \d{3}-\d{4}/);
         });
 
         it('should redact phone numbers with country codes', () => {
             const input = 'International +1-555-123-4567';
-            expect(redactText(tabId, input, vault)).toMatch(/International \(000\) 000-\d{4}/);
+            expect(redactText(tabId, input, vault)).toMatch(/International \(\d{3}\) \d{3}-\d{4}/);
         });
 
         it('should redact phone numbers with dots', () => {
             const input = 'Dots: 555.123.4567';
-            expect(redactText(tabId, input, vault)).toMatch(/Dots: \(000\) 000-\d{4}/);
+            expect(redactText(tabId, input, vault)).toMatch(/Dots: \(\d{3}\) \d{3}-\d{4}/);
         });
     });
 
     describe('US Social Security Numbers (SSN)', () => {
         it('should redact valid formatted US SSNs', () => {
             const input = 'My SSN is 123-45-6789.';
-            expect(redactText(tabId, input, vault)).toMatch(/My SSN is 000-00-\d{4}\./);
+            expect(redactText(tabId, input, vault)).toMatch(/My SSN is 000-\d{2}-\d{4}\./);
         });
 
         it('should ignore invalid area codes (000, 666, 900+)', () => {
@@ -124,12 +124,12 @@ describe('Regex Engine & Luhn Validation', () => {
     describe('Canadian Social Insurance Numbers (SIN)', () => {
         it('should redact valid Canadian SINs (passes Luhn)', () => {
             const validSIN = '046-454-286'; // Modulus 10 compliant
-            expect(redactText(tabId, validSIN, vault)).toMatch(/000-000-\d{3}/);
+            expect(redactText(tabId, validSIN, vault)).toMatch(/000-\d{3}-\d{3}/);
         });
 
         it('should redact valid Canadian SINs without dashes', () => {
             const validSIN = '046454286'; // Modulus 10 compliant
-            expect(redactText(tabId, validSIN, vault)).toMatch(/000-000-\d{3}/);
+            expect(redactText(tabId, validSIN, vault)).toMatch(/000-\d{3}-\d{3}/);
         });
 
         it('should reject invalid Canadian SINs (fails Luhn)', () => {
@@ -142,12 +142,12 @@ describe('Regex Engine & Luhn Validation', () => {
         it('should redact valid Visa cards (passes Luhn)', () => {
             // Visa prefix 4, 16 digits
             const validVisa = '4111111111111111'; // Common test card (passes Luhn)
-            expect(redactText(tabId, validVisa, vault)).toMatch(/0000-0000-0000-\d{4}/);
+            expect(redactText(tabId, validVisa, vault)).toMatch(/0000-0000-\d{4}-\d{4}/);
         });
 
         it('should redact valid MasterCard (passes Luhn)', () => {
             const validMC = '5555555555554444'; // Example valid luhn
-            expect(redactText(tabId, validMC, vault)).toMatch(/0000-0000-0000-\d{4}/);
+            expect(redactText(tabId, validMC, vault)).toMatch(/0000-0000-\d{4}-\d{4}/);
         });
 
         it('should ignore strings that look like cards but fail Luhn', () => {
@@ -161,7 +161,7 @@ describe('Regex Engine & Luhn Validation', () => {
             const input = 'Call 555-123-4567 or email test@example.com about 123-45-6789.';
             const redacted = redactText(tabId, input, vault);
 
-            expect(redacted).toMatch(/Call \(000\) 000-\d{4} or email user\.\d+@example\.com about 000-00-\d{4}\./);
+            expect(redacted).toMatch(/Call \(\d{3}\) \d{3}-\d{4} or email user\.\d+@example\.com about 000-\d{2}-\d{4}\./);
         });
 
         it('should successfully unredact mixed tokens', () => {
@@ -184,7 +184,7 @@ describe('Regex Engine & Luhn Validation', () => {
             // Email directly followed by Phone but separated by non-word boundaries
             const input = 'Email:test@example.com,Phone:555-123-4567';
             const redacted = redactText(tabId, input, vault);
-            expect(redacted).toMatch(/Email:user\.\d+@example\.com,Phone:\(000\) 000-\d{4}/);
+            expect(redacted).toMatch(/Email:user\.\d+@example\.com,Phone:\(\d{3}\) \d{3}-\d{4}/);
         });
 
         it('should enforce strict boundary checks to avoid partial matches (SSN/SIN lengths)', () => {
@@ -209,31 +209,31 @@ describe('Regex Engine & Luhn Validation', () => {
 
     describe('replaceOutsideTokens', () => {
         it('should replace matches outside of generated tokens', () => {
-            const input = 'This is michael and PERSON.711 and Michael.';
+            const input = 'This is michael and PERSON.a7_711 and Michael.';
             const regex = /\bmichael\b/gi;
-            const result = replaceOutsideTokens(input, regex, () => 'PERSON.711.1');
+            const result = replaceOutsideTokens(input, regex, () => 'PERSON.a7_711_1');
             
             // Should replace lowercase and exact matches of the word but ignore the generated token completely,
             // even though the semantic type is a word. (If the regex was /person/gi)
-            expect(result).toBe('This is PERSON.711.1 and PERSON.711 and PERSON.711.1.');
+            expect(result).toBe('This is PERSON.a7_711_1 and PERSON.a7_711 and PERSON.a7_711_1.');
         });
 
         it('should NOT replace text inside a valid token', () => {
-            const input = 'The person is PERSON.123 and another person is here.';
+            const input = 'The person is PERSON.a7_123 and another person is here.';
             const regex = /\bperson\b/gi;
             const result = replaceOutsideTokens(input, regex, () => 'REPLACED');
             
-            expect(result).toBe('The REPLACED is PERSON.123 and another REPLACED is here.');
+            expect(result).toBe('The REPLACED is PERSON.a7_123 and another REPLACED is here.');
         });
 
         it('should handle multiple tokens adjacent to each other', () => {
-            const input = 'email user.1@example.com phone PHONE.2 email';
+            const input = 'email user.581_1@example.com phone PHONE.a7_2 email';
             const regex = /\bemail\b/gi;
             const result = replaceOutsideTokens(input, regex, () => 'REPLACED');
             
-            // Notice user.1@example.com is NOT a Vault semantic token (TYPE.ID)
+            // Notice user.581_1@example.com is NOT a Vault semantic token (TYPE.ID)
             // But it doesn't match 'email' anyway.
-            expect(result).toBe('REPLACED user.1@example.com phone PHONE.2 REPLACED');
+            expect(result).toBe('REPLACED user.581_1@example.com phone PHONE.a7_2 REPLACED');
         });
     });
 

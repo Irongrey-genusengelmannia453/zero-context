@@ -5,7 +5,7 @@ import { VaultManager } from './vault';
  * generated semantic tokens (e.g., PERSON.711, LOCATION.712.1) are ignored.
  */
 export function replaceOutsideTokens(text: string, searchRegex: RegExp, replaceFn: (match: string) => string): string {
-    const tokenRegex = /\b(?:PERSON|LOCATION|ORG|MISC|PII|EMAIL|PHONE|CARD|SSN|SIN)\.\d+(?:\.\d+)?\b/g;
+    const tokenRegex = /\b(?:PERSON|LOCATION|ORG|MISC|PII|EMAIL|PHONE|CARD|SSN|SIN)\.[a-z0-9]+_\d+(?:_\d+)?\b/g;
     
     let lastIndex = 0;
     let result = '';
