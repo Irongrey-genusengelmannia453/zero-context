@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { redactText } from './regexEngine';
+import { redactText, replaceOutsideTokens } from './regexEngine';
 import { VaultManager } from './vault';
 
 // Robust Chrome Storage Mock supporting both Promises and Callbacks
@@ -204,6 +204,36 @@ describe('Regex Engine & Luhn Validation', () => {
             
             // Should execute in well under 50ms locally
             expect(duration).toBeLessThan(50);
+        });
+    });
+
+    describe('replaceOutsideTokens', () => {
+        it('should replace matches outside of generated tokens', () => {
+            const input = 'This is michael and PERSON.711 and Michael.';
+            const regex = /\bmichael\b/gi;
+            const result = replaceOutsideTokens(input, regex, () => 'PERSON.711.1');
+            
+            // Should replace lowercase and exact matches of the word but ignore the generated token completely,
+            // even though the semantic type is a word. (If the regex was /person/gi)
+            expect(result).toBe('This is PERSON.711.1 and PERSON.711 and PERSON.711.1.');
+        });
+
+        it('should NOT replace text inside a valid token', () => {
+            const input = 'The person is PERSON.123 and another person is here.';
+            const regex = /\bperson\b/gi;
+            const result = replaceOutsideTokens(input, regex, () => 'REPLACED');
+            
+            expect(result).toBe('The REPLACED is PERSON.123 and another REPLACED is here.');
+        });
+
+        it('should handle multiple tokens adjacent to each other', () => {
+            const input = 'email user.1@example.com phone PHONE.2 email';
+            const regex = /\bemail\b/gi;
+            const result = replaceOutsideTokens(input, regex, () => 'REPLACED');
+            
+            // Notice user.1@example.com is NOT a Vault semantic token (TYPE.ID)
+            // But it doesn't match 'email' anyway.
+            expect(result).toBe('REPLACED user.1@example.com phone PHONE.2 REPLACED');
         });
     });
 

@@ -1,12 +1,14 @@
 # ZeroContext Roadmap & State Tracker
 
 ## 📌 Active Sprint Goal
-Polish the ML redaction tokens. Currently, it redacts using abstract tokens like `[PER_211]`, `[LOC_234]`. We need semantic tokens like `[PERSON_<number>]` and `[CITY_<number>]` so AI retains contextual understanding of the entity type.
+Polish the ML redaction tokens. Currently, it redacts using abstract tokens like `[PER_211]`, `[LOC_234]`. We need semantic tokens like `[PERSON_<number>]` and `[LOCATION_<number>]` so AI retains contextual understanding of the entity type.
 
 ## 🏃‍♂️ In Progress (Current Focus)
-- [ ] **Semantic Token Replacements:** Update `vault.ts` and `background.ts` to substitute ML outputs with readable tokens like `[PERSON_1]`, `[CITY_1]`, or `[COUNTRY_1]`. The `<number>` suffix must dynamically follow the existing vault schema indexing to ensure consistency.
+*(None)*
 
 ## ✅ Completed 
+- [x] **Universal Alias Algorithm:** Sub-token routing (`PERSON.181.1`) and Ambiguity Preservation (`PERSON.183`) implemented to maintain perfect coreference resolution and case-preservation without poisoning LLM context.
+- [x] **Semantic Token Replacements:** Update `vault.ts` and `background.ts` to map ML entity groups to semantic Dot-notation tokens (`PERSON.123`).
 - [x] **Phase 1 (Regex Vault):** Completed, tested, mathematically sound, and deduplicated.
 - [x] **Lexer (`src/lexer.ts`):** AST Lexer properly ignores JSON keys/code syntax.
 - [x] **Offscreen Pipeline Scaffolded:** Service Worker ⇄ Offscreen Document ⇄ Sandbox Iframe is fully race-condition safe. Data loss bug via `postMessage` structured clone and offscreen message routing resolved.

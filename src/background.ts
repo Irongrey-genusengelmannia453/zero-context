@@ -1,12 +1,12 @@
 import { VaultManager } from './vault';
-import { redactText } from './regexEngine';
+import { redactText, replaceOutsideTokens } from './regexEngine';
 import {
     sendWorkerTask,
     closeOffscreenDocument,
-    initOffscreenResponseListener,
-    getOrCreateOffscreenDocument
+    initOffscreenResponseListener
 } from './offscreen/offscreen-manager';
 import { extractTextForML } from './lexer';
+import { mapMLTagToSemantic } from './semanticMapper';
 
 console.log("[ZeroContext] Background service worker active.");
 
@@ -129,38 +129,98 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             if (response.status === 'ERROR') {
                                 console.error("[ZeroContext] Worker returned ERROR:", response.data);
                             } else {
-                                const nerResults = response.data as Array<Array<{ word: string, entity_group?: string, entity?: string, score: number }>>;
+                                const nerResults = response.data as Array<Array<{ word: string, entity_group?: string, entity?: string, score: number, start: number, end: number }>>;
                                 console.log(`[ZeroContext] NER results outer length: ${nerResults?.length ?? 'null'}`);
                                 
                                 if (nerResults && nerResults.length > 0) {
+                                    const canonicalEntities = new Map<string, string>(); // canonicalText -> semanticType
+
+                                    // 1. Gather all high-confidence ML entities
                                     for (const entities of nerResults) {
-                                        console.log(`[ZeroContext] Processing entity batch: ${entities?.length ?? 'null'} entities`);
-                                        if (!entities || !Array.isArray(entities)) {
-                                            console.error("[ZeroContext] entities is not an array:", typeof entities, entities);
-                                            continue;
-                                        }
+                                        if (!entities || !Array.isArray(entities)) continue;
                                         
-                                        let searchIndex = 0;
                                         for (const ent of entities) {
-                                            // Filter low confidence and non-entities
                                             if (ent.score > 0.6) {
-                                                const type = ent.entity_group || ent.entity?.replace(/^[BI]-/, '') || 'PII';
-                                                if (type !== 'O') {
+                                                const rawType = ent.entity_group || ent.entity?.replace(/^[BI]-/, '') || 'PII';
+                                                const semanticType = mapMLTagToSemantic(rawType);
+                                                if (semanticType !== null) {
                                                     const cleanWord = ent.word.replace(/^##/, '');
-                                                    const token = vaultManager.redactEntity(tabId, type, cleanWord);
+                                                    // This naturally deduplicates. Longest canonicals will be sorted next.
+                                                    canonicalEntities.set(cleanWord, semanticType);
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // 2. Build the Universal Alias Map (resolving ML partial-matches to Canonical parents)
+                                    const aliasMap = new Map<string, { canonicalText: string, semanticType: string }>();
+                                    
+                                    // Sort by length descending to ensure full names take precedence as Canonical Parents
+                                    const sortedCanonicals = Array.from(canonicalEntities.keys()).sort((a, b) => b.length - a.length);
+
+                                    for (const canonicalText of sortedCanonicals) {
+                                        const semanticType = canonicalEntities.get(canonicalText)!;
+                                        
+                                        // Helper to safely register aliases and detect ambiguity
+                                        const registerAlias = (alias: string, targetCanonical: string) => {
+                                            if (!aliasMap.has(alias)) {
+                                                aliasMap.set(alias, { canonicalText: targetCanonical, semanticType });
+                                            } else {
+                                                const existing = aliasMap.get(alias)!;
+                                                // If an alias belongs to multiple distinct canonical parents, it is ambiguous.
+                                                if (existing.canonicalText !== targetCanonical) {
+                                                    // If the existing longer parent actually contains this new target,
+                                                    // it is NOT a conflict between two different people. It's just the ML model
+                                                    // separately extracting a sub-component (e.g. first name) after already extracting the full name.
+                                                    const isSubstring = existing.canonicalText.includes(targetCanonical) || targetCanonical.includes(existing.canonicalText);
                                                     
-                                                    const matchIndex = redacted.indexOf(cleanWord, searchIndex);
-                                                    if (matchIndex !== -1) {
-                                                        redacted = redacted.substring(0, matchIndex) + token + redacted.substring(matchIndex + cleanWord.length);
-                                                        searchIndex = matchIndex + token.length;
-                                                        console.log(`[ZeroContext] Replaced "${cleanWord}" -> ${token}`);
-                                                    } else {
-                                                        console.warn(`[ZeroContext] FAILED to find "${cleanWord}" after index ${searchIndex}`);
+                                                    if (!isSubstring) {
+                                                        // Genuine conflict (e.g. two distinct people sharing the same first name). Elevate to ambiguous canonical.
+                                                        aliasMap.set(alias, { canonicalText: alias, semanticType });
+                                                    }
+                                                }
+                                            }
+                                        };
+
+                                        // Always map the exact canonical phrase to itself
+                                        registerAlias(canonicalText, canonicalText);
+
+                                        // Split PERSON entities for fuzzy matching
+                                        if (semanticType === 'PERSON') {
+                                            const parts = canonicalText.split(/\s+/);
+                                            if (parts.length > 1) {
+                                                for (const part of parts) {
+                                                    if (part.length >= 3) {
+                                                        registerAlias(part, canonicalText);
                                                     }
                                                 }
                                             }
                                         }
                                     }
+
+                                    // 3. Execute exactly ONE sweep pass, sorted by length descending
+                                    const sortedAliases = Array.from(aliasMap.keys()).sort((a, b) => b.length - a.length);
+
+                                    for (const alias of sortedAliases) {
+                                        const { canonicalText, semanticType } = aliasMap.get(alias)!;
+                                        
+                                        // Ensure the canonical text is registered in the vault so we can derive aliases from it
+                                        const canonicalToken = vaultManager.redactEntity(tabId, semanticType, canonicalText);
+                                        
+                                        // Safe sweeping ignoring existing tokens
+                                        const escapedAlias = alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                                        const regex = new RegExp(`\\b${escapedAlias}\\b`, 'gi');
+                                        
+                                        redacted = replaceOutsideTokens(redacted, regex, (match) => {
+                                            // If the match exactly matches the canonical form (case-sensitive), use the primary token
+                                            if (match === canonicalText) {
+                                                return canonicalToken;
+                                            }
+                                            // Otherwise it's a variant (lowercase, partial), generate an alias token!
+                                            return vaultManager.redactAlias(tabId, canonicalText, match);
+                                        });
+                                    }
+                                    
                                 } else {
                                     console.warn("[ZeroContext] NER results empty or null");
                                 }

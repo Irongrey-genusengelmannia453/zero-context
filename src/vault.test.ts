@@ -111,4 +111,48 @@ describe('VaultManager', () => {
             expect(chromeMock.storage.session.remove).toHaveBeenCalledWith('1');
         });
     });
+
+    describe('Semantic Token Formatting (Dot Style)', () => {
+        it('should format Semantic Entities (PERSON, LOCATION, ORGANIZATION) as TYPE.ID', () => {
+            const token1 = vault.redactEntity(1, 'PERSON', 'John Doe');
+            const token2 = vault.redactEntity(1, 'LOCATION', 'New York');
+            const token3 = vault.redactEntity(1, 'ORGANIZATION', 'Google');
+
+            // Dot style ensures no square brackets or XML tags
+            expect(token1).toMatch(/^PERSON\.\d+$/);
+            expect(token2).toMatch(/^LOCATION\.\d+$/);
+            expect(token3).toMatch(/^ORGANIZATION\.\d+$/);
+        });
+
+        it('should format generic fallbacks (PII) as PII.ID', () => {
+            const token = vault.redactEntity(1, 'PII', 'Some secret');
+            expect(token).toMatch(/^PII\.\d+$/);
+        });
+
+        it('should correctly unredact Dot style tokens', () => {
+            const token = vault.redactEntity(2, 'PERSON', 'Jane Smith');
+            expect(token).toMatch(/^PERSON\.\d+$/);
+            
+            const input = `Hello ${token}, how are you?`;
+            const restored = vault.unredactText(2, input);
+            expect(restored).toBe('Hello Jane Smith, how are you?');
+        });
+    });
+
+    describe('Alias Redaction (Sub-Tokens)', () => {
+        it('should generate sub-tokens for variants and unredact them correctly', () => {
+            const canonicalToken = vault.redactEntity(1, 'PERSON', 'Michael Thompson');
+            const aliasToken1 = vault.redactAlias(1, 'Michael Thompson', 'Michael');
+            const aliasToken2 = vault.redactAlias(1, 'Michael Thompson', 'michael');
+
+            expect(aliasToken1).toMatch(new RegExp(`^${canonicalToken}\\.\\d+$`));
+            expect(aliasToken2).toMatch(new RegExp(`^${canonicalToken}\\.\\d+$`));
+            expect(aliasToken1).not.toBe(aliasToken2);
+
+            const input = `Both ${canonicalToken} and ${aliasToken1} and ${aliasToken2} are here.`;
+            const restored = vault.unredactText(1, input);
+            
+            expect(restored).toBe('Both Michael Thompson and Michael and michael are here.');
+        });
+    });
 });

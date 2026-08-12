@@ -1,5 +1,29 @@
 import { VaultManager } from './vault';
 
+/**
+ * Safely replaces text using a regex, ensuring that matches inside 
+ * generated semantic tokens (e.g., PERSON.711, LOCATION.712.1) are ignored.
+ */
+export function replaceOutsideTokens(text: string, searchRegex: RegExp, replaceFn: (match: string) => string): string {
+    const tokenRegex = /\b(?:PERSON|LOCATION|ORG|MISC|PII|EMAIL|PHONE|CARD|SSN|SIN)\.\d+(?:\.\d+)?\b/g;
+    
+    let lastIndex = 0;
+    let result = '';
+    let match;
+
+    while ((match = tokenRegex.exec(text)) !== null) {
+        const before = text.substring(lastIndex, match.index);
+        result += before.replace(searchRegex, replaceFn);
+        result += match[0];
+        lastIndex = tokenRegex.lastIndex;
+    }
+
+    const remaining = text.substring(lastIndex);
+    result += remaining.replace(searchRegex, replaceFn);
+
+    return result;
+}
+
 // Modulus 10 Validator for CCs and Canadian SINs
 function isLuhnValid(numberStr: string): boolean {
     // Remove all non-digits
@@ -70,7 +94,7 @@ export function redactText(tabId: number, text: string, vault: VaultManager): st
     // 3. Canadian SINs
     redacted = redacted.replace(CANADIAN_SIN_REGEX, (match) => {
         // Only process if it wasn't already processed as SSN (they share format sometimes)
-        if (match.includes('[SSN_')) return match; 
+        if (match.includes('SSN.')) return match; 
         
         const cleanMatch = match.replace(/[\s-]/g, '');
         if (cleanMatch.length === 9 && isLuhnValid(cleanMatch)) {

@@ -93,7 +93,7 @@ export class VaultManager {
                 break;
             }
             default:
-                token = `[${type}_${rawId}]`;
+                token = `${type}.${rawId}`;
                 break;
         }
 
@@ -107,6 +107,30 @@ export class VaultManager {
         return token;
     }
 
+    public redactAlias(tabId: number, canonicalOriginalText: string, exactMatch: string): string {
+        this.initTabIfNeeded(tabId);
+        const key = tabId.toString();
+        const tabData = this.cache[key];
+
+        if (tabData.forward[exactMatch]) {
+            return tabData.forward[exactMatch];
+        }
+
+        const canonicalToken = tabData.forward[canonicalOriginalText];
+        if (!canonicalToken) {
+            return this.redactEntity(tabId, 'PII', exactMatch);
+        }
+
+        tabData.globalCounter++;
+        const token = `${canonicalToken}.${tabData.globalCounter}`;
+        
+        tabData.forward[exactMatch] = token;
+        tabData.reverse[token] = exactMatch;
+
+        this.persistTab(tabId).catch(err => console.error("[ZeroContext] Failed to persist vault", err));
+        return token;
+    }
+
     public unredactText(tabId: number, text: string): string {
         const key = tabId.toString();
         const tabData = this.cache[key];
@@ -115,7 +139,11 @@ export class VaultManager {
             return text; // Nothing redacted for this tab
         }
 
-        return Object.keys(tabData.reverse).reduce(
+        // Sort by length descending to ensure sub-tokens (e.g. PERSON.711.1) 
+        // are replaced before their canonical parents (e.g. PERSON.711).
+        const tokens = Object.keys(tabData.reverse).sort((a, b) => b.length - a.length);
+
+        return tokens.reduce(
             (acc, token) => acc.replaceAll(token, tabData.reverse[token]),
             text
         );
