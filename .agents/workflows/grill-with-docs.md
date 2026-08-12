@@ -1,9 +1,8 @@
 ---
-name: grill-with-docs
 description: A relentless interview to sharpen a plan or design for local development, updating ROADMAP.md and ARCHITECTURE.md as we go.
 ---
 
-Run a grilling session to define the next feature. 
+Run a /grill-me session to define the next feature. 
 
 1. Interview the user relentlessly to sharpen the plan, clarify edge cases, and define the exact scope.
 2. Cross-reference the user's answers against `ARCHITECTURE.md` to ensure no Manifest V3 or Zero-Trust constraints are violated.
