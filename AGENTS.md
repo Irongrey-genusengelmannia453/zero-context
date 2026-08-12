@@ -70,3 +70,15 @@ function handleMessage(msg: WorkerMessage) {
   }
 }
 ```
+
+## 6. Real-World Extension Scope & Event Interception
+- **Never trust isolated unit tests alone** for Extension APIs. If you write a 'content.ts' event listener (like 'paste' or 'copy'), you MUST explicitly consider domain scoping.
+- Content scripts injected into '<all_urls>' must implement a **Domain Gatekeeper** (e.g., checking if the current URL is a designated AI domain) before hijacking native browser behavior.
+
+## 7. LLM-Safe Token Formatting
+- **Zero Square Brackets:** Never generate redacted tokens with square brackets ('[ ]'). LLMs will treat them as Markdown links and mangle the output.
+- **Dot-Notation / Semantic Structuring:** Use dot-notation with alphanumeric salts (e.g., 'PERSON.el64_1' or 'user.684@example.com'). This ensures the LLM treats it as literal text while preserving the semantic type for contextual understanding.
+
+## 8. Chrome TabId Normalization
+- Chrome 'tabId's are massive, variable-length integers (e.g., '1501235664').
+- When using 'tabId' as a salt or seed for string generation, you **MUST** normalize, delimit, or modulo it (e.g., 'tabId % 100') and pad it to a fixed length to prevent overlapping string replacements.
