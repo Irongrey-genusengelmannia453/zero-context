@@ -15,11 +15,12 @@ const vaultManager = new VaultManager();
 // Initialize the offscreen response listener for Worker round-trips
 initOffscreenResponseListener();
 
-
+const tabOfflineErrorShown = new Set<number>();
 
 // Ephemeral Memory Commitment - Flush tab state when closed
 chrome.tabs.onRemoved.addListener((tabId) => {
     vaultManager.clearTab(tabId).catch(err => console.error(err));
+    tabOfflineErrorShown.delete(tabId);
 });
 
 // Helper to dynamically check if a URL is an AI domain based on manifest and future user settings
@@ -49,6 +50,10 @@ async function isAIDomain(targetUrl: string): Promise<boolean> {
 
 // Ephemeral Memory Commitment - Flush tab state when navigating away from AI domains
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+    if (changeInfo.status === 'loading') {
+        tabOfflineErrorShown.delete(tabId);
+    }
+
     if (changeInfo.url) {
         const url = changeInfo.url;
         isAIDomain(url).then(isAI => {
@@ -60,11 +65,33 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    // ─── Global Progress Broadcast ──────────────────────────
+    if (message.action === "MODEL_PROGRESS") {
+        chrome.tabs.query({}).then(tabs => {
+            for (const t of tabs) {
+                if (t.id) {
+                    chrome.tabs.sendMessage(t.id, {
+                        type: 'MODEL_PROGRESS',
+                        ...message.data
+                    }).catch(() => {});
+                }
+            }
+        });
+        return false;
+    }
+
     // ─── Offscreen Worker Pipeline (no tab ID required) ─────
     if (message.action === "WORKER_PING") {
         sendWorkerTask('PING')
             .then(response => sendResponse({ status: "SUCCESS", data: response }))
             .catch(err => sendResponse({ status: "ERROR", data: (err as Error).message }));
+        return true;
+    }
+
+    if (message.action === "CHECK_AI_DOMAIN") {
+        isAIDomain(message.payload).then(isAI => {
+            sendResponse({ isAI });
+        });
         return true;
     }
 
@@ -111,120 +138,167 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 let redacted = message.payload;
                 const isDeepMode = storage.engineMode === 'deep' || storage.engineMode === undefined;
                 console.log(`[ZeroContext] Engine mode: ${storage.engineMode ?? 'deep (default)'}, isDeepMode: ${isDeepMode}`);
+                let pipelineError: string | undefined = undefined;
                 
+                let temporaryRegexMode = false;
+                try {
+                    const sessionState = await chrome.storage.session.get('temporaryRegexMode');
+                    temporaryRegexMode = !!sessionState.temporaryRegexMode;
+                } catch (e) {
+                    // Ignored
+                }
+
+                // Auto-Recovery Network Ping
+                if (isDeepMode && temporaryRegexMode) {
+                    if (navigator.onLine) {
+                        try {
+                            console.log("[ZeroContext] Auto-Recovery: Network appears online. Pinging...");
+                            // Lightweight ping to check real connectivity (2s timeout)
+                            const controller = new AbortController();
+                            const timeout = setTimeout(() => controller.abort(), 2000);
+                            // Use mode: 'no-cors' to avoid CORS blocking. Any resolution (opaque response) is a success.
+                            await fetch('https://huggingface.co/', { method: 'HEAD', mode: 'no-cors', cache: 'no-store', signal: controller.signal });
+                            clearTimeout(timeout);
+                            
+                            console.log("[ZeroContext] Auto-Recovery: Ping successful. Re-enabling Deep Mode.");
+                            await chrome.storage.session.remove('temporaryRegexMode');
+                            temporaryRegexMode = false;
+                        } catch (pingErr) {
+                            console.log("[ZeroContext] Auto-Recovery: Ping failed. Staying in normal mode.");
+                        }
+                    }
+                }
+
                 // Layer 2 & 3: Neural Engine (Run BEFORE regex so it doesn't trip on regex tokens)
-                if (isDeepMode) {
+                if (isDeepMode && !temporaryRegexMode) {
                     const stringsToProcess = extractTextForML(redacted);
                     console.log(`[ZeroContext] extractTextForML returned ${stringsToProcess.length} string(s), total length: ${stringsToProcess.reduce((a, s) => a + s.length, 0)}`);
                     
                     if (stringsToProcess.length > 0) {
                         try {
                             const workerStart = performance.now();
-                            console.log("[ZeroContext] Sending PROCESS_TEXT to worker...");
-                            const response = await sendWorkerTask('PROCESS_TEXT', { texts: stringsToProcess });
-                            const workerEnd = performance.now();
-                            console.log(`[ZeroContext] Worker responded in ${(workerEnd - workerStart).toFixed(0)}ms, status: ${response.status}, durationMs: ${response.durationMs ?? 'N/A'}`);
-                            console.log(`[ZeroContext] response.data type: ${typeof response.data}, isArray: ${Array.isArray(response.data)}`);
+                            console.log("[ZeroContext] Sending PROCESS_TEXT to worker in chunks...");
+                            const allNerResults: Array<Array<{ word: string, entity_group?: string, entity?: string, score: number, start: number, end: number }>> = [];
                             
-                            if (response.status === 'ERROR') {
-                                console.error("[ZeroContext] Worker returned ERROR:", response.data);
-                            } else {
-                                const nerResults = response.data as Array<Array<{ word: string, entity_group?: string, entity?: string, score: number, start: number, end: number }>>;
-                                console.log(`[ZeroContext] NER results outer length: ${nerResults?.length ?? 'null'}`);
-                                
-                                if (nerResults && nerResults.length > 0) {
-                                    const canonicalEntities = new Map<string, string>(); // canonicalText -> semanticType
+                            let mlFailed = false;
 
-                                    // 1. Gather all high-confidence ML entities
-                                    for (const entities of nerResults) {
-                                        if (!entities || !Array.isArray(entities)) continue;
+                            for (let i = 0; i < stringsToProcess.length; i++) {
+                                try {
+                                    const response = await sendWorkerTask('PROCESS_TEXT', { texts: [stringsToProcess[i]] });
+                                    
+                                    if (response.status === 'ERROR') {
+                                        console.error("[ZeroContext] Worker returned ERROR:", response.data);
+                                        mlFailed = true;
                                         
-                                        for (const ent of entities) {
-                                            if (ent.score > 0.6) {
-                                                const rawType = ent.entity_group || ent.entity?.replace(/^[BI]-/, '') || 'PII';
-                                                const semanticType = mapMLTagToSemantic(rawType);
-                                                if (semanticType !== null) {
-                                                    const cleanWord = ent.word.replace(/^##/, '');
-                                                    // This naturally deduplicates. Longest canonicals will be sorted next.
-                                                    canonicalEntities.set(cleanWord, semanticType);
-                                                }
-                                            }
+                                        const errorData = String(response.data);
+                                        if (errorData.includes('FETCH_STREAM_INTERRUPTED')) {
+                                            pipelineError = "Network interrupted during AI download. Falling back to normal mode.";
+                                        } else {
+                                            pipelineError = "Model needs to be downloaded but couldn't due to internet connection not available. Switching to normal mode temporarily.";
+                                        }
+                                        break;
+                                    } else {
+                                        const nerResults = response.data as Array<Array<{ word: string, entity_group?: string, entity?: string, score: number, start: number, end: number }>>;
+                                        if (nerResults && nerResults.length > 0) {
+                                            allNerResults.push(...nerResults);
                                         }
                                     }
-
-                                    // 2. Build the Universal Alias Map (resolving ML partial-matches to Canonical parents)
-                                    const aliasMap = new Map<string, { canonicalText: string, semanticType: string }>();
-                                    
-                                    // Sort by length descending to ensure full names take precedence as Canonical Parents
-                                    const sortedCanonicals = Array.from(canonicalEntities.keys()).sort((a, b) => b.length - a.length);
-
-                                    for (const canonicalText of sortedCanonicals) {
-                                        const semanticType = canonicalEntities.get(canonicalText)!;
-                                        
-                                        // Helper to safely register aliases and detect ambiguity
-                                        const registerAlias = (alias: string, targetCanonical: string) => {
-                                            if (!aliasMap.has(alias)) {
-                                                aliasMap.set(alias, { canonicalText: targetCanonical, semanticType });
-                                            } else {
-                                                const existing = aliasMap.get(alias)!;
-                                                // If an alias belongs to multiple distinct canonical parents, it is ambiguous.
-                                                if (existing.canonicalText !== targetCanonical) {
-                                                    // If the existing longer parent actually contains this new target,
-                                                    // it is NOT a conflict between two different people. It's just the ML model
-                                                    // separately extracting a sub-component (e.g. first name) after already extracting the full name.
-                                                    const isSubstring = existing.canonicalText.includes(targetCanonical) || targetCanonical.includes(existing.canonicalText);
-                                                    
-                                                    if (!isSubstring) {
-                                                        // Genuine conflict (e.g. two distinct people sharing the same first name). Elevate to ambiguous canonical.
-                                                        aliasMap.set(alias, { canonicalText: alias, semanticType });
-                                                    }
-                                                }
-                                            }
-                                        };
-
-                                        // Always map the exact canonical phrase to itself
-                                        registerAlias(canonicalText, canonicalText);
-
-                                        // Split PERSON entities for fuzzy matching
-                                        if (semanticType === 'PERSON') {
-                                            const parts = canonicalText.split(/\s+/);
-                                            if (parts.length > 1) {
-                                                for (const part of parts) {
-                                                    if (part.length >= 3) {
-                                                        registerAlias(part, canonicalText);
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    // 3. Execute exactly ONE sweep pass, sorted by length descending
-                                    const sortedAliases = Array.from(aliasMap.keys()).sort((a, b) => b.length - a.length);
-
-                                    for (const alias of sortedAliases) {
-                                        const { canonicalText, semanticType } = aliasMap.get(alias)!;
-                                        
-                                        // Ensure the canonical text is registered in the vault so we can derive aliases from it
-                                        const canonicalToken = vaultManager.redactEntity(tabId, semanticType, canonicalText);
-                                        
-                                        // Safe sweeping ignoring existing tokens
-                                        const escapedAlias = alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                                        const regex = new RegExp(`\\b${escapedAlias}\\b`, 'gi');
-                                        
-                                        redacted = replaceOutsideTokens(redacted, regex, (match) => {
-                                            // If the match exactly matches the canonical form (case-sensitive), use the primary token
-                                            if (match === canonicalText) {
-                                                return canonicalToken;
-                                            }
-                                            // Otherwise it's a variant (lowercase, partial), generate an alias token!
-                                            return vaultManager.redactAlias(tabId, canonicalText, match);
-                                        });
-                                    }
-                                    
-                                } else {
-                                    console.warn("[ZeroContext] NER results empty or null");
+                                } catch (taskErr) {
+                                    console.error("[ZeroContext] Worker task failed unexpectedly:", taskErr);
+                                    mlFailed = true;
+                                    pipelineError = "Network interrupted during AI download. Falling back to normal mode.";
+                                    break;
                                 }
                             }
+                            
+                            if (mlFailed) {
+                                // Only show error message once per tab session
+                                if (!tabOfflineErrorShown.has(tabId)) {
+                                    tabOfflineErrorShown.add(tabId);
+                                } else {
+                                    pipelineError = undefined; // Don't show again this session
+                                }
+                                
+                                await chrome.storage.session.set({ temporaryRegexMode: true });
+                                // Break out of try/catch to fall back to Layer 1 (Regex) immediately.
+                            } else {
+                                const workerEnd = performance.now();
+                                console.log(`[ZeroContext] Worker chunks completed in ${(workerEnd - workerStart).toFixed(0)}ms`);
+                                
+                                const nerResults = allNerResults;
+                            console.log(`[ZeroContext] NER results outer length: ${nerResults?.length ?? 'null'}`);
+                                
+
+                            if (nerResults && nerResults.length > 0) {
+                                const canonicalEntities = new Map<string, string>(); 
+                                for (const entities of nerResults) {
+                                    if (!entities || !Array.isArray(entities)) continue;
+                                    for (const ent of entities) {
+                                        if (ent.score > 0.6) {
+                                            const rawType = ent.entity_group || ent.entity?.replace(/^[BI]-/, '') || 'PII';
+                                            const semanticType = mapMLTagToSemantic(rawType);
+                                            if (semanticType !== null) {
+                                                const cleanWord = ent.word.replace(/^##/, '');
+                                                canonicalEntities.set(cleanWord, semanticType);
+                                            }
+                                        }
+                                    }
+                                }
+
+                                const aliasMap = new Map<string, { canonicalText: string, semanticType: string }>();
+                                const sortedCanonicals = Array.from(canonicalEntities.keys()).sort((a, b) => b.length - a.length);
+
+                                for (const canonicalText of sortedCanonicals) {
+                                    const semanticType = canonicalEntities.get(canonicalText)!;
+                                    
+                                    const registerAlias = (alias: string, targetCanonical: string) => {
+                                        if (!aliasMap.has(alias)) {
+                                            aliasMap.set(alias, { canonicalText: targetCanonical, semanticType });
+                                        } else {
+                                            const existing = aliasMap.get(alias)!;
+                                            if (existing.canonicalText !== targetCanonical) {
+                                                const isSubstring = existing.canonicalText.includes(targetCanonical) || targetCanonical.includes(existing.canonicalText);
+                                                if (!isSubstring) {
+                                                    aliasMap.set(alias, { canonicalText: alias, semanticType });
+                                                }
+                                            }
+                                        }
+                                    };
+
+                                    registerAlias(canonicalText, canonicalText);
+
+                                    if (semanticType === 'PERSON') {
+                                        const parts = canonicalText.split(/\s+/);
+                                        if (parts.length > 1) {
+                                            for (const part of parts) {
+                                                if (part.length >= 3) {
+                                                    registerAlias(part, canonicalText);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                const sortedAliases = Array.from(aliasMap.keys()).sort((a, b) => b.length - a.length);
+
+                                for (const alias of sortedAliases) {
+                                    const { canonicalText, semanticType } = aliasMap.get(alias)!;
+                                    const canonicalToken = vaultManager.redactEntity(tabId, semanticType, canonicalText);
+                                    
+                                    const escapedAlias = alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                                    const regex = new RegExp(`\\b${escapedAlias}\\b`, 'gi');
+                                    
+                                    redacted = replaceOutsideTokens(redacted, regex, (match) => {
+                                        if (match === canonicalText) {
+                                            return canonicalToken;
+                                        }
+                                        return vaultManager.redactAlias(tabId, canonicalText, match);
+                                    });
+                                }
+                            } else {
+                                console.warn("[ZeroContext] NER results empty or null");
+                            }
+                            } // Close mlFailed else block
                         } catch (err) {
                             console.error("[ZeroContext] NER Error (full):", err);
                             console.error("[ZeroContext] NER Error message:", err instanceof Error ? err.message : String(err));
@@ -238,8 +312,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 
                 const pipelineEnd = performance.now();
                 console.log(`[ZeroContext] Total pipeline: ${(pipelineEnd - pipelineStart).toFixed(0)}ms`);
-                sendResponse({ status: "SUCCESS", data: redacted });
-            } 
+
+                sendResponse({ status: "SUCCESS", data: redacted, error: pipelineError });
+            }  
             else if (message.action === "UNREDACT_TEXT") {
                 console.log("[ZeroContext] Un-redacting payload...");
                 const storage = await chrome.storage.local.get(['isRedactionEnabled']);

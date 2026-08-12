@@ -113,7 +113,9 @@ class PipelineSingleton {
             }).catch(err => {
                 // Reset so future calls can retry
                 this.instancePromise = null;
-                throw err;
+                const errorMsg = err instanceof Error ? err.message : String(err);
+                relayLog('error', `Pipeline initialization failed: ${errorMsg}`);
+                throw new Error(errorMsg);
             });
         }
         return this.instancePromise;
@@ -164,7 +166,13 @@ window.addEventListener('message', async (event: MessageEvent) => {
                 relayLog('log', `PROCESS_TEXT received. ${texts.length} text(s) to process.`);
 
                 const loadStart = performance.now();
-                const model = await PipelineSingleton.getInstance() as Function;
+                // We pass a progress callback to getInstance so lazy loads (e.g. cache eviction) correctly broadcast MODEL_PROGRESS
+                const model = await PipelineSingleton.getInstance((progressData) => {
+                    parent.postMessage({
+                        action: 'MODEL_PROGRESS',
+                        data: progressData
+                    }, '*');
+                }) as Function;
                 const loadEnd = performance.now();
                 relayLog('log', `Model getInstance: ${(loadEnd - loadStart).toFixed(0)}ms`);
 
@@ -213,7 +221,13 @@ window.addEventListener('message', async (event: MessageEvent) => {
 });
 
 // ─── Eager model load ───────────────────────────────────────
-PipelineSingleton.getInstance().then(() => {
+PipelineSingleton.getInstance((progressData) => {
+    // Relay Transformers.js native progress callback object to the parent offscreen document
+    parent.postMessage({
+        action: 'MODEL_PROGRESS',
+        data: progressData
+    }, '*');
+}).then(() => {
     relayLog('log', 'Eager model load complete.');
     parent.postMessage({ action: 'SANDBOX_READY', status: 'SUCCESS' }, '*');
 }).catch((err) => {

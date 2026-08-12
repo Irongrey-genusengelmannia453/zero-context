@@ -1,4 +1,18 @@
+import { ZeroContextToast } from './ui/ZeroContextToast';
+
 console.log("[ZeroContext] Content script initialized. Watching for inputs.");
+
+const uiManager = new ZeroContextToast();
+let isProcessingText = false;
+let isAiDomain = false;
+
+// Check if we are on an AI domain on load
+chrome.runtime.sendMessage({ action: "CHECK_AI_DOMAIN", payload: window.location.href }, (response) => {
+    if (response && response.isAI) {
+        isAiDomain = true;
+        console.log("[ZeroContext] Detected AI domain. Redaction enabled for pastes.");
+    }
+});
 
 window.addEventListener("paste", async (event: ClipboardEvent) => {
     const activeElement = document.activeElement as HTMLElement;
@@ -15,6 +29,11 @@ window.addEventListener("paste", async (event: ClipboardEvent) => {
     const pastedText = clipboardData.getData("text");
     if (!pastedText.trim()) return;
 
+    if (!isAiDomain) {
+        // Not an AI domain, do not redact on paste.
+        return;
+    }
+
     // 2. Intercept the default paste behavior
     event.preventDefault();
     event.stopPropagation();
@@ -22,11 +41,36 @@ window.addEventListener("paste", async (event: ClipboardEvent) => {
     console.log("[ZeroContext] Intercepted text. Forwarding to background vault...");
 
     try {
+        let isRedacting = true;
+        isProcessingText = true;
+        
+        const toastTimer = setTimeout(() => {
+            if (isRedacting && uiManager.state.state !== 'DOWNLOADING_MODEL' && uiManager.state.state !== 'ERROR') {
+                uiManager.showIndeterminateRedacting();
+            }
+        }, 300);
+
+        // Listen for MODEL_ERROR specifically for this paste action
+        const errorListener = (msg: any) => {
+            if (msg.type === 'MODEL_ERROR') {
+                uiManager.showError(msg.message);
+            }
+        };
+        chrome.runtime.onMessage.addListener(errorListener);
+
         // 3. Send to our background script
         const response = await chrome.runtime.sendMessage({
             action: "REDACT_TEXT",
             payload: pastedText
         });
+        
+        chrome.runtime.onMessage.removeListener(errorListener);
+        isRedacting = false;
+        clearTimeout(toastTimer);
+        
+        if (response && response.error) {
+            uiManager.showError(response.error);
+        }
 
         if (response && response.status === "SUCCESS") {
             // 4. Insert at cursor & preserve Undo stack
@@ -62,6 +106,9 @@ window.addEventListener("paste", async (event: ClipboardEvent) => {
         }
     } catch (error) {
         console.error("[ZeroContext] Message passing failed.", error);
+    } finally {
+        isProcessingText = false;
+        uiManager.hide();
     }
 }, true);
 
@@ -130,3 +177,20 @@ function dispatchResponse(eventId: string, finalStr: string) {
         text: finalStr
     }, "*");
 }
+
+// ─── Global Progress Listeners (from Background) ─────────────
+chrome.runtime.onMessage.addListener((msg) => {
+    if (msg.type === 'MODEL_PROGRESS') {
+        const status = msg.status;
+        if (status === 'progress' || status === 'downloading' || status === 'initiate') {
+            uiManager.updateDownloadProgress(msg.loaded || 0, msg.total || 1);
+        } else if (status === 'done' || status === 'ready') {
+            // Instead of hiding immediately and causing a flicker before inference starts, 
+            // we seamlessly transition back to indeterminate redacting. The final hide() 
+            // will be called when the REDACT_TEXT promise resolves.
+            if (isProcessingText) {
+                uiManager.showIndeterminateRedacting();
+            }
+        }
+    }
+});
