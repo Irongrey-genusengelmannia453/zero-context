@@ -34,8 +34,8 @@ export default defineConfig(() => {
             }
         }
     },
-        worker: {
-            format: 'es'
-        }
+    worker: {
+        format: 'es'
+    }
     };
 });

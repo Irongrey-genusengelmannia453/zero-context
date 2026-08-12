@@ -1,42 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { redactText, replaceOutsideTokens } from './regexEngine';
 import { VaultManager } from './vault';
+import { stubChromeGlobal } from './test/chrome.mock';
 
-// Robust Chrome Storage Mock supporting both Promises and Callbacks
-const chromeMock = {
-    storage: {
-        session: {
-            get: vi.fn((_keys, callback) => {
-                const mockResult = {};
-                if (typeof callback === 'function') {
-                    callback(mockResult);
-                }
-                return Promise.resolve(mockResult);
-            }),
-            set: vi.fn((_data, callback) => {
-                if (typeof callback === 'function') {
-                    callback();
-                }
-                return Promise.resolve();
-            }),
-            remove: vi.fn((_keys, callback) => {
-                if (typeof callback === 'function') {
-                    callback();
-                }
-                return Promise.resolve();
-            }),
-        }
-    },
-    runtime: {
-        sendMessage: vi.fn(),
-    },
-    tabs: {
-        onRemoved: { addListener: vi.fn() },
-        onUpdated: { addListener: vi.fn() }
-    }
-};
-
-vi.stubGlobal('chrome', chromeMock);
+stubChromeGlobal('storage');
 
 describe('Regex Engine & Luhn Validation', () => {
     let vault: VaultManager;

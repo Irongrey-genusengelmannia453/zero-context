@@ -1,27 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { VaultManager } from './vault';
+import { stubChromeGlobal } from './test/chrome.mock';
 
-// Mock chrome.storage.session
-const chromeMock = {
-    storage: {
-        session: {
-            get: vi.fn((_keys, callback) => {
-                if (typeof callback === 'function') callback({});
-                return Promise.resolve({});
-            }),
-            set: vi.fn((_data, callback) => {
-                if (typeof callback === 'function') callback();
-                return Promise.resolve();
-            }),
-            remove: vi.fn((_keys, callback) => {
-                if (typeof callback === 'function') callback();
-                return Promise.resolve();
-            }),
-        }
-    }
-};
-
-vi.stubGlobal('chrome', chromeMock);
+const chromeMock = stubChromeGlobal('storage');
 
 describe('VaultManager', () => {
     let vault: VaultManager;
@@ -37,7 +18,7 @@ describe('VaultManager', () => {
             const tokenTab1 = vault.redactEntity(1, 'EMAIL', 'user@test.com');
             const tokenTab2 = vault.redactEntity(2, 'EMAIL', 'user@test.com');
 
-            // Tokens should not be exactly identical because of unique sessionSalts or counters
+            // Tokens differ across tabs due to unique alphaSalt/numericSalt per tab
             expect(tokenTab1).not.toBe(tokenTab2);
 
             // Unredacting in tab 1 should work

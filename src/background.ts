@@ -1,12 +1,13 @@
 import { VaultManager } from './vault';
-import { redactText, replaceOutsideTokens } from './regexEngine';
+import { redactText } from './regexEngine';
 import {
     sendWorkerTask,
     closeOffscreenDocument,
     initOffscreenResponseListener
 } from './offscreen/offscreen-manager';
 import { extractTextForML } from './lexer';
-import { mapMLTagToSemantic } from './semanticMapper';
+import { processNerResults } from './nerProcessor';
+import type { NerResultSet } from './types/ner';
 
 console.log("[ZeroContext] Background service worker active.");
 
@@ -178,18 +179,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         try {
                             const workerStart = performance.now();
                             console.log("[ZeroContext] Sending PROCESS_TEXT to worker in chunks...");
-                            const allNerResults: Array<Array<{ word: string, entity_group?: string, entity?: string, score: number, start: number, end: number }>> = [];
-                            
+                            const allNerResults: NerResultSet = [];
                             let mlFailed = false;
 
                             for (let i = 0; i < stringsToProcess.length; i++) {
                                 try {
                                     const response = await sendWorkerTask('PROCESS_TEXT', { texts: [stringsToProcess[i]] });
-                                    
+
                                     if (response.status === 'ERROR') {
                                         console.error("[ZeroContext] Worker returned ERROR:", response.data);
                                         mlFailed = true;
-                                        
+
                                         const errorData = String(response.data);
                                         if (errorData.includes('FETCH_STREAM_INTERRUPTED')) {
                                             pipelineError = "Network interrupted during AI download. Falling back to normal mode.";
@@ -198,7 +198,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                                         }
                                         break;
                                     } else {
-                                        const nerResults = response.data as Array<Array<{ word: string, entity_group?: string, entity?: string, score: number, start: number, end: number }>>;
+                                        const nerResults = response.data as NerResultSet;
                                         if (nerResults && nerResults.length > 0) {
                                             allNerResults.push(...nerResults);
                                         }
@@ -210,95 +210,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                                     break;
                                 }
                             }
-                            
+
                             if (mlFailed) {
-                                // Only show error message once per tab session
                                 if (!tabOfflineErrorShown.has(tabId)) {
                                     tabOfflineErrorShown.add(tabId);
                                 } else {
-                                    pipelineError = undefined; // Don't show again this session
+                                    pipelineError = undefined;
                                 }
-                                
                                 await chrome.storage.session.set({ temporaryRegexMode: true });
-                                // Break out of try/catch to fall back to Layer 1 (Regex) immediately.
                             } else {
                                 const workerEnd = performance.now();
                                 console.log(`[ZeroContext] Worker chunks completed in ${(workerEnd - workerStart).toFixed(0)}ms`);
-                                
-                                const nerResults = allNerResults;
-                            console.log(`[ZeroContext] NER results outer length: ${nerResults?.length ?? 'null'}`);
-                                
 
-                            if (nerResults && nerResults.length > 0) {
-                                const canonicalEntities = new Map<string, string>(); 
-                                for (const entities of nerResults) {
-                                    if (!entities || !Array.isArray(entities)) continue;
-                                    for (const ent of entities) {
-                                        if (ent.score > 0.6) {
-                                            const rawType = ent.entity_group || ent.entity?.replace(/^[BI]-/, '') || 'PII';
-                                            const semanticType = mapMLTagToSemantic(rawType);
-                                            if (semanticType !== null) {
-                                                const cleanWord = ent.word.replace(/^##/, '');
-                                                canonicalEntities.set(cleanWord, semanticType);
-                                            }
-                                        }
-                                    }
+                                if (allNerResults.length > 0) {
+                                    redacted = processNerResults(redacted, allNerResults, tabId, vaultManager);
+                                } else {
+                                    console.warn("[ZeroContext] NER results empty or null");
                                 }
-
-                                const aliasMap = new Map<string, { canonicalText: string, semanticType: string }>();
-                                const sortedCanonicals = Array.from(canonicalEntities.keys()).sort((a, b) => b.length - a.length);
-
-                                for (const canonicalText of sortedCanonicals) {
-                                    const semanticType = canonicalEntities.get(canonicalText)!;
-                                    
-                                    const registerAlias = (alias: string, targetCanonical: string) => {
-                                        if (!aliasMap.has(alias)) {
-                                            aliasMap.set(alias, { canonicalText: targetCanonical, semanticType });
-                                        } else {
-                                            const existing = aliasMap.get(alias)!;
-                                            if (existing.canonicalText !== targetCanonical) {
-                                                const isSubstring = existing.canonicalText.includes(targetCanonical) || targetCanonical.includes(existing.canonicalText);
-                                                if (!isSubstring) {
-                                                    aliasMap.set(alias, { canonicalText: alias, semanticType });
-                                                }
-                                            }
-                                        }
-                                    };
-
-                                    registerAlias(canonicalText, canonicalText);
-
-                                    if (semanticType === 'PERSON') {
-                                        const parts = canonicalText.split(/\s+/);
-                                        if (parts.length > 1) {
-                                            for (const part of parts) {
-                                                if (part.length >= 3) {
-                                                    registerAlias(part, canonicalText);
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                const sortedAliases = Array.from(aliasMap.keys()).sort((a, b) => b.length - a.length);
-
-                                for (const alias of sortedAliases) {
-                                    const { canonicalText, semanticType } = aliasMap.get(alias)!;
-                                    const canonicalToken = vaultManager.redactEntity(tabId, semanticType, canonicalText);
-                                    
-                                    const escapedAlias = alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                                    const regex = new RegExp(`\\b${escapedAlias}\\b`, 'gi');
-                                    
-                                    redacted = replaceOutsideTokens(redacted, regex, (match) => {
-                                        if (match === canonicalText) {
-                                            return canonicalToken;
-                                        }
-                                        return vaultManager.redactAlias(tabId, canonicalText, match);
-                                    });
-                                }
-                            } else {
-                                console.warn("[ZeroContext] NER results empty or null");
                             }
-                            } // Close mlFailed else block
                         } catch (err) {
                             console.error("[ZeroContext] NER Error (full):", err);
                             console.error("[ZeroContext] NER Error message:", err instanceof Error ? err.message : String(err));

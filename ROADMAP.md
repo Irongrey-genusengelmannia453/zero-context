@@ -1,7 +1,7 @@
 # ZeroContext Roadmap & State Tracker
 
 ## 📌 Active Sprint Goal
-Polish the ML redaction tokens. Currently, it redacts using abstract tokens like `[PER_211]`, `[LOC_234]`. We need semantic tokens like `[PERSON_<number>]` and `[LOCATION_<number>]` so AI retains contextual understanding of the entity type.
+*(None — previous sprint completed. See Completed section below.)*
 
 ## 🏃‍♂️ In Progress (Current Focus)
 *(None)*
@@ -11,8 +11,8 @@ Polish the ML redaction tokens. Currently, it redacts using abstract tokens like
 - [x] **Content Script UI:** Listen for DOM Paste events.
 - [x] **Content Script UI:** Listen for DOM Copy events & `navigator.clipboard` Monkey Patching (De-anonymization).
 - [x] **Connect the Web Worker payload router to the background script.**
-- [x] **Universal Alias Algorithm:** Sub-token routing (`PERSON.181.1`) and Ambiguity Preservation (`PERSON.183`) implemented to maintain perfect coreference resolution and case-preservation without poisoning LLM context.
-- [x] **Semantic Token Replacements:** Update `vault.ts` and `background.ts` to map ML entity groups to semantic Dot-notation tokens (`PERSON.123`).
+- [x] **Universal Alias Algorithm:** Sub-token routing (`PERSON.el64_1_2`) and Ambiguity Preservation (`PERSON.el64_3`) implemented to maintain perfect coreference resolution and case-preservation without poisoning LLM context.
+- [x] **Semantic Token Replacements:** Update `vault.ts` and `background.ts` to map ML entity groups to semantic Dot-notation tokens (`PERSON.el64_1`).
 - [x] **Phase 1 (Regex Vault):** Completed, tested, mathematically sound, and deduplicated.
 - [x] **Lexer (`src/lexer.ts`):** AST Lexer properly ignores JSON keys/code syntax.
 - [x] **Offscreen Pipeline Scaffolded:** Service Worker ⇄ Offscreen Document ⇄ Sandbox Iframe is fully race-condition safe. Data loss bug via `postMessage` structured clone and offscreen message routing resolved.

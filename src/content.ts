@@ -1,4 +1,5 @@
 import { ZeroContextToast } from './ui/ZeroContextToast';
+import type { ExtensionBroadcastMessage } from './types/progress';
 
 console.log("[ZeroContext] Content script initialized. Watching for inputs.");
 
@@ -51,7 +52,7 @@ window.addEventListener("paste", async (event: ClipboardEvent) => {
         }, 300);
 
         // Listen for MODEL_ERROR specifically for this paste action
-        const errorListener = (msg: any) => {
+        const errorListener = (msg: ExtensionBroadcastMessage) => {
             if (msg.type === 'MODEL_ERROR') {
                 uiManager.showError(msg.message);
             }

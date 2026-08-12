@@ -2,7 +2,6 @@ export interface TabVaultData {
     forward: Record<string, string>; // original -> token e.g., "john@doe.com" -> "user.5811@example.com"
     reverse: Record<string, string>; // token -> original e.g., "user.5811@example.com" -> "john@doe.com"
     globalCounter: number; // Single counter for all entities
-    sessionSalt?: number; // legacy
     alphaSalt?: string;
     numericSalt?: string;
 }
@@ -30,16 +29,27 @@ export class VaultManager {
         });
     }
 
+    /**
+     * Generates deterministic-length salts from a tabId.
+     * Normalizes the tabId via modulo 100 to prevent variable-length collisions.
+     */
+    private generateSalts(tabId: number): { alphaSalt: string; numericSalt: string } {
+        const shortTab = String(tabId % 100).padStart(2, '0');
+        return {
+            alphaSalt: Math.random().toString(36).substring(2, 4) + shortTab,
+            numericSalt: String(Math.floor(Math.random() * 9) + 1) + shortTab,
+        };
+    }
+
     private initTabIfNeeded(tabId: number): void {
         const key = tabId.toString();
         if (!this.cache[key]) {
-            const shortTab = String(tabId % 100).padStart(2, '0');
+            const salts = this.generateSalts(tabId);
             this.cache[key] = {
                 forward: {},
                 reverse: {},
                 globalCounter: 0,
-                alphaSalt: Math.random().toString(36).substring(2, 4) + shortTab,
-                numericSalt: String(Math.floor(Math.random() * 9) + 1) + shortTab
+                ...salts,
             };
         }
     }
@@ -68,14 +78,11 @@ export class VaultManager {
         }
         tabData.globalCounter++;
 
-        // Backwards compatibility for hydration
-        if (!tabData.alphaSalt) {
-            const shortTab = String(tabId % 100).padStart(2, '0');
-            tabData.alphaSalt = Math.random().toString(36).substring(2, 4) + shortTab;
-        }
-        if (!tabData.numericSalt) {
-            const shortTab = String(tabId % 100).padStart(2, '0');
-            tabData.numericSalt = String(Math.floor(Math.random() * 9) + 1) + shortTab;
+        // Backwards compatibility: hydrated sessions may lack salts
+        if (!tabData.alphaSalt || !tabData.numericSalt) {
+            const salts = this.generateSalts(tabId);
+            tabData.alphaSalt = tabData.alphaSalt ?? salts.alphaSalt;
+            tabData.numericSalt = tabData.numericSalt ?? salts.numericSalt;
         }
 
         // 3. Generate Token

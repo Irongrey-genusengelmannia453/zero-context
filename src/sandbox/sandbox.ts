@@ -12,6 +12,8 @@
 // ─────────────────────────────────────────────────────────────
 
 import { pipeline, env } from '@huggingface/transformers';
+import type { TokenClassificationPipeline } from '@huggingface/transformers';
+import type { NerEntity } from '../types/ner';
 
 // ─── Relay Logger ───────────────────────────────────────────
 // Sandbox console is invisible to the user. Relay critical logs
@@ -98,16 +100,17 @@ if (env.backends?.onnx?.wasm) {
 class PipelineSingleton {
     static task = 'token-classification';
     static model = 'Xenova/distilbert-base-multilingual-cased-ner-hrl';
-    static instancePromise: Promise<unknown> | null = null;
+    static instancePromise: Promise<TokenClassificationPipeline> | null = null;
 
-    static getInstance(progress_callback?: NonNullable<Parameters<typeof pipeline>[2]>['progress_callback']): Promise<unknown> {
+    static getInstance(progress_callback?: NonNullable<Parameters<typeof pipeline>[2]>['progress_callback']): Promise<TokenClassificationPipeline> {
         if (this.instancePromise === null) {
             relayLog('log', `Loading model: ${this.model}...`);
             this.instancePromise = pipeline(this.task as "token-classification", this.model, {
                 progress_callback,
                 device: 'wasm',
                 quantized: true,
-            } as Parameters<typeof pipeline>[2]).then(instance => {
+            } as Parameters<typeof pipeline>[2]) as Promise<TokenClassificationPipeline>;
+            this.instancePromise = this.instancePromise.then(instance => {
                 relayLog('log', 'Model loaded successfully.');
                 return instance;
             }).catch(err => {
@@ -166,17 +169,16 @@ window.addEventListener('message', async (event: MessageEvent) => {
                 relayLog('log', `PROCESS_TEXT received. ${texts.length} text(s) to process.`);
 
                 const loadStart = performance.now();
-                // We pass a progress callback to getInstance so lazy loads (e.g. cache eviction) correctly broadcast MODEL_PROGRESS
                 const model = await PipelineSingleton.getInstance((progressData) => {
                     parent.postMessage({
                         action: 'MODEL_PROGRESS',
                         data: progressData
                     }, '*');
-                }) as Function;
+                });
                 const loadEnd = performance.now();
                 relayLog('log', `Model getInstance: ${(loadEnd - loadStart).toFixed(0)}ms`);
 
-                const results: Array<Array<{ word: string; entity_group: string; score: number; start: number; end: number }>> = [];
+                const results: NerEntity[][] = [];
 
                 for (const text of texts) {
                     relayLog('log', `Running inference on text (${text.length} chars)...`);
@@ -189,7 +191,7 @@ window.addEventListener('message', async (event: MessageEvent) => {
                     // NOT a plain Array. postMessage uses the structured clone algorithm which may
                     // silently drop properties from custom classes. We must explicitly convert to
                     // plain JSON-safe objects before sending through postMessage.
-                    const plainEntities: Array<{ word: string; entity_group: string; score: number; start: number; end: number }> = [];
+                    const plainEntities: NerEntity[] = [];
                     for (const entity of output) {
                         plainEntities.push({
                             word: String(entity.word ?? ''),

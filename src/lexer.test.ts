@@ -101,14 +101,10 @@ describe('extractTextForML', () => {
             expect(result).not.toContain('"values"');
         });
 
-        it('should handle prose that accidentally resembles code', () => {
-            // Because it contains `console.log`, the heuristic flags it as code.
-            // It will then use the regex lexer, which means it will ONLY extract things inside quotes!
-            // Wait, this is a known limitation of our current lightweight lexer. If we use a heuristic 
-            // and it false-positives, we lose the non-quoted prose. Let's document this exact behavior.
+        it('should extract only quoted strings when prose is falsely flagged as code (known heuristic trade-off)', () => {
+            // console.log() triggers the code heuristic, so the lexer drops non-quoted prose.
             const prose = 'Here is how to use console.log("hello world") in JavaScript.';
             const result = extractTextForML(prose);
-            // It will extract the quoted string, but drop the rest.
             expect(result).toEqual(['"hello world"']);
         });
 

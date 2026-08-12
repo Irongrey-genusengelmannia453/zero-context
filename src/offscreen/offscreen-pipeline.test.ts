@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
+import { createChromeMock } from '../test/chrome.mock';
 
 // ─────────────────────────────────────────────────────────────
 // Chrome API Mock — offscreen, runtime, storage, tabs
@@ -6,50 +7,29 @@ import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
 
 let hasDocumentValue = false;
 
-const chromeMock = {
+const chromeMock = createChromeMock('full') as ReturnType<typeof createChromeMock> & {
     offscreen: {
-        hasDocument: vi.fn((): Promise<boolean> => Promise.resolve(hasDocumentValue)),
-        createDocument: vi.fn((): Promise<void> => {
-            hasDocumentValue = true;
-            return Promise.resolve();
-        }),
-        closeDocument: vi.fn((): Promise<void> => {
-            hasDocumentValue = false;
-            return Promise.resolve();
-        }),
-        Reason: { WORKERS: 'WORKERS' },
-    },
+        hasDocument: ReturnType<typeof vi.fn>;
+        createDocument: ReturnType<typeof vi.fn>;
+        closeDocument: ReturnType<typeof vi.fn>;
+        Reason: { WORKERS: string };
+    };
     runtime: {
-        sendMessage: vi.fn((): Promise<void> => Promise.resolve()),
-        onMessage: {
-            addListener: vi.fn(),
-        },
-    },
-    storage: {
-        session: {
-            get: vi.fn((_keys: unknown, callback?: (items: Record<string, unknown>) => void) => {
-                const result = {};
-                if (typeof callback === 'function') callback(result);
-                return Promise.resolve(result);
-            }),
-            set: vi.fn((_data: unknown, callback?: () => void) => {
-                if (typeof callback === 'function') callback();
-                return Promise.resolve();
-            }),
-            remove: vi.fn((_keys: unknown, callback?: () => void) => {
-                if (typeof callback === 'function') callback();
-                return Promise.resolve();
-            }),
-        },
-        local: {
-            get: vi.fn(() => Promise.resolve({})),
-        },
-    },
-    tabs: {
-        onRemoved: { addListener: vi.fn() },
-        onUpdated: { addListener: vi.fn() },
-    },
+        sendMessage: ReturnType<typeof vi.fn>;
+        onMessage: { addListener: ReturnType<typeof vi.fn> };
+    };
 };
+
+// Override offscreen methods to use the mutable `hasDocumentValue` flag
+chromeMock.offscreen.hasDocument = vi.fn((): Promise<boolean> => Promise.resolve(hasDocumentValue));
+chromeMock.offscreen.createDocument = vi.fn((): Promise<void> => {
+    hasDocumentValue = true;
+    return Promise.resolve();
+});
+chromeMock.offscreen.closeDocument = vi.fn((): Promise<void> => {
+    hasDocumentValue = false;
+    return Promise.resolve();
+});
 
 vi.stubGlobal('chrome', chromeMock);
 vi.stubGlobal('crypto', { randomUUID: () => `test-uuid-${Date.now()}-${Math.random()}` });
@@ -265,13 +245,9 @@ describe('Offscreen Pipeline', () => {
             expect(result.status).toBe('ERROR');
             expect(result.data).toBe('Web Worker out of memory');
         });
-
-
     });
 
-    // ─────────────────────────────────────────────────────────
-    // Test 4: Response Listener Registration
-    // ─────────────────────────────────────────────────────────
+
     // ─────────────────────────────────────────────────────────
     // Test 4: Response Listener Registration & Orphaned Messages
     // ─────────────────────────────────────────────────────────
