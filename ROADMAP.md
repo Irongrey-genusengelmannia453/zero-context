@@ -4,11 +4,11 @@
 *(None — previous sprint completed. See Completed section below.)*
 
 ## 🏃‍♂️ In Progress (Current Focus)
-- [ ] **Dynamic Domain Gatekeeper:** Refactor `manifest.json` to support dynamic domain injection (or use `<all_urls>`) and update the existing Domain Gatekeeper in `content.ts` to respect user-configured custom AI domains, strictly adhering to *Rule 6* in `AGENTS.md`.
 - [ ] **User Onboarding Flow:** Implement a `chrome.runtime.onInstalled` listener to open a Welcome/Onboarding page that explains how the zero-latency, local-first proxy works.
 - [ ] **Release Automation:** Create a build script (`npm run build:zip`) for Chrome Web Store packaging that strips dev dependencies, handles sourcemaps appropriately, and ensures manifest compliance.
 
 ## ✅ Completed 
+- [x] **Dynamic Domain Gatekeeper (Data Layer):** Implemented `chrome.storage.sync` Domain Configuration state with Zod schemas, discriminated unions, and a synchronous `DomainGatekeeper` class for zero-latency URL checking. Updated `manifest.json` to properly declare the Big 5 default domains and the `scripting` permission, strictly avoiding `<all_urls>`.
 - [x] **Playwright E2E Testing Framework:** Built a full-pipeline Playwright E2E testing framework that validates the 3-tier pipeline (DOM Paste -> Background -> Offscreen -> Sandbox WASM -> DOM Update). Integrates Live-site fallbacks (ChatGPT -> Gemini -> Mock) and simulates human interactions to avoid bot detection while testing Regex and NER redaction + copy unredaction.
 - [x] **Redaction Pipeline Integration:** Implemented AI Domain gatekeeper in `content.ts` to prevent over-redaction on non-AI domains, and fixed variable-length tab ID token overlap.
 - [x] **Content Script UI:** Listen for DOM Paste events.

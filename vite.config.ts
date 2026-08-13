@@ -1,9 +1,13 @@
+/// <reference types="vitest" />
 import { defineConfig } from 'vite';
 import { crx } from '@crxjs/vite-plugin';
 import manifest from './manifest.json';
 
 export default defineConfig(() => {
     return {
+        test: {
+            exclude: ['node_modules', 'dist', '.idea', '.git', '.cache', 'tests/e2e/**'],
+        },
         plugins: [
             crx({ manifest }),
             {

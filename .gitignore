@@ -23,6 +23,6 @@ dist-ssr
 *.sln
 *.sw?
 
-Goal.md
 *repomix*
-*plan.md
+playwright-report/
+test-results/
