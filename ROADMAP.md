@@ -18,5 +18,11 @@
 - [x] **Offscreen Pipeline Scaffolded:** Service Worker ⇄ Offscreen Document ⇄ Sandbox Iframe is fully race-condition safe. Data loss bug via `postMessage` structured clone and offscreen message routing resolved.
 - [x] **Initialize Transformers.js (WASM in Sandbox):** The `Xenova/distilbert-base-multilingual-cased-ner-hrl` model is successfully running natively quantized. Fetch-delegation and WASM execution confirmed.
 
-## 🔮 Backlog / Up Next
-- [x] Create UI Progress Badge ("Redacting PII... 80%") for massive payloads > 300ms.
+## 🔮 Backlog / Up Next (V1.0 Production Readiness)
+- [x] **Extension Branding & Assets:** Generate and integrate missing 16x16, 32x32, 48x48, and 128x128 icons into `manifest.json` and the repository.
+- [ ] **Options & Settings Page:** Build an options UI allowing users to configure custom AI domains (e.g., for local LLMs) and define custom PII regex patterns. 
+- [ ] **Dynamic Domain Gatekeeper:** Refactor `manifest.json` to support dynamic domain injection (or use `<all_urls>`) and update the existing Domain Gatekeeper in `content.ts` to respect user-configured custom AI domains, strictly adhering to *Rule 6* in `AGENTS.md`.
+- [ ] **User Onboarding Flow:** Implement a `chrome.runtime.onInstalled` listener to open a Welcome/Onboarding page that explains how the zero-latency, local-first proxy works.
+- [ ] **E2E Testing Integration:** Add Playwright/Puppeteer E2E browser tests to validate paste/copy hijacking against actual (or mocked) ChatGPT/Claude DOM interfaces to ensure UI resilience.
+- [ ] **Graceful Degradation & Network Recovery:** Implement fallback strategies (falling back to Layer 1 Regex-only) if the WebAssembly Model fails to download or initialize in the Sandbox.
+- [ ] **Release Automation:** Create a build script (`npm run build:zip`) for Chrome Web Store packaging that strips dev dependencies, handles sourcemaps appropriately, and ensures manifest compliance.
