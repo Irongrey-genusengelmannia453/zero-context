@@ -23,6 +23,17 @@ export default defineConfig(() => {
                             manifest.content_security_policy = {};
                         }
                         manifest.content_security_policy.sandbox = "sandbox allow-scripts allow-forms allow-popups allow-modals; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; child-src 'self' blob:;";
+
+                        // CRXJS scopes web_accessible_resources to manifest content_scripts matches by default.
+                        // We must open this up to <all_urls> so that dynamically registered content scripts
+                        // on custom domains can load their chunked dependencies.
+                        if (manifest.web_accessible_resources) {
+                            for (const resource of manifest.web_accessible_resources) {
+                                resource.matches = ["<all_urls>"];
+                                resource.use_dynamic_url = true;
+                            }
+                        }
+
                         fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
                     }
                 }

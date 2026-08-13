@@ -7,12 +7,37 @@
   <title>ZeroContext</title>
   <link rel="stylesheet" href="./node_modules/@picocss/pico/css/pico.min.css">
   <link rel="stylesheet" href="./src/style.css">
+  <style>
+    body {
+      width: 380px;
+      min-height: 450px;
+      margin: 0;
+      padding: 1rem;
+    }
+  </style>
+  <style>
+    @keyframes slideUp {
+      from { transform: translate(-50%, 100%); opacity: 0; }
+      to { transform: translate(-50%, 0); opacity: 1; }
+    }
+  </style>
 </head>
 
 <body>
-  <main>
+  <div id="refresh-banner" style="display: none; position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 9999; background: var(--pico-mark-background-color); color: var(--pico-color); padding: 0.75rem; text-align: center; border-radius: 8px; border: 1px solid var(--pico-muted-border-color); box-shadow: 0 4px 15px rgba(0,0,0,0.3); animation: slideUp 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); width: 90%; max-width: 340px;">
+    <strong>Changes applied!</strong> Please refresh the active tab.
+    <button id="refresh-page-btn" class="secondary" style="margin-top: 0.5rem; margin-bottom: 0; width: 100%; padding: 0.25rem;">Refresh Now</button>
+  </div>
+
+  <!-- HOME VIEW -->
+  <main id="home-view">
     <hgroup>
-      <h3>ZeroContext</h3>
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h3 style="margin-bottom: 0;">ZeroContext</h3>
+        <a href="#" id="open-settings-btn" aria-label="Settings" style="color: var(--pico-color);">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-settings"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+        </a>
+      </div>
       <p><small id="status-text" style="color: var(--pico-ins-color);">Status: Active & Shielded</small></p>
     </hgroup>
 
@@ -24,6 +49,13 @@
         <strong>Enable Redaction</strong>
       </label>
     </fieldset>
+
+    <div id="context-add-container" style="display: none; margin-bottom: var(--pico-spacing);">
+      <button id="add-current-site-btn" class="secondary outline" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+        Protect <span id="current-hostname">this site</span>
+      </button>
+    </div>
 
     <details open>
       <summary>Protection Engine</summary>
@@ -48,10 +80,44 @@
               <span class="target-badge">PROTECTS</span>
               <span class="target-list">Names, Organizations, and Addresses</span>
             </div>
+          </div>
         </label>
       </fieldset>
     </details>
   </main>
+
+  <!-- SETTINGS VIEW -->
+  <main id="settings-view" style="display: none;">
+    <header style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem;">
+      <a href="#" id="back-to-home-btn" aria-label="Back" style="color: var(--pico-color); display: flex; align-items: center; gap: 0.25rem;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+        Back
+      </a>
+      <h3 style="margin-bottom: 0;">Configuration</h3>
+    </header>
+    
+    <article style="padding: 1rem; margin-bottom: 1rem;">
+      <header style="margin-bottom: 1rem;">
+        <strong>Domain Gatekeeper</strong>
+      </header>
+      
+      <form id="add-domain-form">
+        <fieldset role="group" style="margin-bottom: 1.5rem;">
+          <input type="text" id="domain-input" placeholder="e.g. custom-ai.corp" aria-label="Custom Domain" required />
+          <button type="submit" style="width: auto;">Add</button>
+        </fieldset>
+      </form>
+
+      <div id="domains-list" style="margin-bottom: 1.5rem;">
+        <!-- Dynamically populated flex list -->
+      </div>
+
+      <footer style="margin-top: 1.5rem;">
+        <button id="restore-defaults-btn" class="secondary outline" style="width: 100%;">Restore Defaults</button>
+      </footer>
+    </article>
+  </main>
+
   <script type="module" src="/src/main.ts"></script>
 </body>
 

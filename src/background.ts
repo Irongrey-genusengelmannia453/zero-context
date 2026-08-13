@@ -1,4 +1,5 @@
 import { VaultManager } from './vault';
+import { DomainGatekeeper } from './domainGatekeeper';
 import { redactText } from './regexEngine';
 import {
     sendWorkerTask,
@@ -27,23 +28,9 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 // Helper to dynamically check if a URL is an AI domain based on manifest and future user settings
 async function isAIDomain(targetUrl: string): Promise<boolean> {
     try {
-        const urlObj = new URL(targetUrl);
-        
-        // 1. Get default domains from manifest
-        const manifest = chrome.runtime.getManifest();
-        const defaultMatches = manifest.content_scripts?.[0]?.matches || [];
-        
-        // 2. Get future custom domains from storage
-        const storage = await chrome.storage.local.get(['customAIDomains']) as { customAIDomains?: string[] };
-        const customDomains: string[] = storage.customAIDomains || [];
-        
-        const allPatterns = [...defaultMatches, ...customDomains];
-        
-        return allPatterns.some(pattern => {
-            // Very basic pattern matching for hostnames
-            const cleanHost = pattern.replace(/^(\*|https?):\/\//, '').replace(/\/.*/, '');
-            return urlObj.hostname.includes(cleanHost);
-        });
+        const gatekeeper = new DomainGatekeeper();
+        await gatekeeper.initialize();
+        return gatekeeper.isUrlAllowed(targetUrl);
     } catch (e) {
         return false;
     }

@@ -82,3 +82,10 @@ function handleMessage(msg: WorkerMessage) {
 ## 8. Chrome TabId Normalization
 - Chrome 'tabId's are massive, variable-length integers (e.g., '1501235664').
 - When using 'tabId' as a salt or seed for string generation, you **MUST** normalize, delimit, or modulo it (e.g., 'tabId % 100') and pad it to a fixed length to prevent overlapping string replacements.
+
+## Allowed Unattended Commands
+- echo *
+- git status
+- git diff *
+- npm run test
+- npx tsc --noEmit

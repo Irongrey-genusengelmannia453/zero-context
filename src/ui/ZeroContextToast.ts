@@ -162,6 +162,19 @@ export class ZeroContextToast {
         this.render();
     }
 
+    public showSuccess(message: string): void {
+        this.ensureVisible();
+        this.state = {
+            state: 'SUCCESS',
+            message
+        };
+        this.render();
+        
+        // Auto-hide success after 2.5 seconds
+        if (this.hideTimeout) clearTimeout(this.hideTimeout);
+        this.hideTimeout = setTimeout(() => this.executeHide(), 2500);
+    }
+
     public updateDownloadProgress(loadedBytes: number, totalBytes: number): void {
         this.ensureVisible();
         const percent = totalBytes > 0 ? Math.round((loadedBytes / totalBytes) * 100) : 0;
@@ -246,6 +259,17 @@ export class ZeroContextToast {
             icon.className = 'error';
             icon.style.backgroundColor = '#ff4b4b';
             icon.style.boxShadow = '0 0 8px rgba(255, 75, 75, 0.4)';
+            
+            percentage.textContent = '';
+            barTrack.style.display = 'none';
+        } else if (this.state.state === 'SUCCESS') {
+            title.textContent = this.state.message;
+            title.style.color = '#34d399'; // Greenish color for success
+            subText.style.display = 'none';
+
+            icon.className = 'success';
+            icon.style.backgroundColor = '#34d399';
+            icon.style.boxShadow = '0 0 8px rgba(52, 211, 153, 0.4)';
             
             percentage.textContent = '';
             barTrack.style.display = 'none';

@@ -33,6 +33,9 @@
         "*://*.perplexity.ai/*",
         "*://chat.deepseek.com/*"
     ],
+    "optional_host_permissions": [
+        "<all_urls>"
+    ],
     "action": {
         "default_popup": "index.html",
         "default_title": "ZeroContext",

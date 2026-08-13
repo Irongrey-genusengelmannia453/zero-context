@@ -41,3 +41,33 @@ export const DEFAULT_AI_DOMAINS = [
   { type: 'BUILT_IN', id: 'perplexity', pattern: '*://*.perplexity.ai/*', enabled: true },
   { type: 'BUILT_IN', id: 'deepseek', pattern: '*://chat.deepseek.com/*', enabled: true },
 ] satisfies DomainEntry[];
+
+// --- UI & Permissions Types ---
+
+export const HostnameInputSchema = z.string()
+  .min(1, "Hostname cannot be empty")
+  .refine(
+    (val) => /^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(val),
+    "Must be a valid hostname (e.g., custom-ai.corp)"
+  );
+
+export const AddDomainResultSchema = z.discriminatedUnion('status', [
+  z.object({
+    status: z.literal('SUCCESS'),
+    domain: CustomDomainSchema
+  }),
+  z.object({
+    status: z.literal('ERROR_PERMISSION_DENIED'),
+    message: z.string()
+  }),
+  z.object({
+    status: z.literal('ERROR_INVALID_HOSTNAME'),
+    message: z.string()
+  }),
+  z.object({
+    status: z.literal('ERROR_ALREADY_EXISTS'),
+    message: z.string()
+  })
+]);
+
+export type AddDomainResult = z.infer<typeof AddDomainResultSchema>;

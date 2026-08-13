@@ -62,4 +62,8 @@ export type ToastState =
     | {
           state: 'ERROR';
           message: string;
+      }
+    | {
+          state: 'SUCCESS';
+          message: string;
       };
