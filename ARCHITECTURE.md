@@ -41,3 +41,8 @@ Heavy ML matrix math will freeze the host webpage if executed on the main thread
 * **Background Response Routing:** When routing `postMessage` responses from the Sandbox through the Offscreen to the Background, we cannot use the `sendResponse()` callback inside `chrome.runtime.onMessage` because the Background is listening on a new channel. The Offscreen must initiate a *new* `chrome.runtime.sendMessage()` back to the Background script.
 * **The CRXJS Sandbox Bug:** `@crxjs/vite-plugin` silently strips the `"sandbox"` CSP directive. We use a custom Vite plugin to manually inject the `"sandbox"` CSP into the built `dist/manifest.json`.
 * **Ephemeral Vault:** Mapped entities (e.g., `user.684@example.com`, `PERSON.el64_1`) are stored in `TabVaultData` separated by `tabId`. They must be flushed immediately when the tab closes.
+
+## 6. End-to-End (E2E) Testing Strategy
+* **Framework:** Playwright is used to launch a real Chromium instance with the unpacked extension loaded from `dist`.
+* **Environment:** Tests run against local mock HTML pages that perfectly replicate the structural DOM of ChatGPT and Claude (e.g., specific `contenteditable` configurations). We avoid live production domains to prevent flakiness from auth walls and A/B testing.
+* **Pipeline Validation:** The E2E tests are full-stack. They trigger a real paste event, allow the actual WASM model to be downloaded (which caches on the first run) and executed in the Sandbox, and verify that the final DOM string has been redacted correctly.
