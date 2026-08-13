@@ -4,10 +4,10 @@
 - **Dynamic Domain Gatekeeper (UI):** Build a dedicated Options page and update the Popup UI to allow frictionless addition, removal, and toggling of custom AI domains. Implement `chrome.permissions.request()` flows to acquire dynamic host permissions at runtime without relying on `<all_urls>`.
 
 ## 🏃‍♂️ In Progress (Current Focus)
-- [ ] **User Onboarding Flow:** Implement a `chrome.runtime.onInstalled` listener to open a Welcome/Onboarding page that explains how the zero-latency, local-first proxy works.
 - [ ] **Release Automation:** Create a build script (`npm run build:zip`) for Chrome Web Store packaging that strips dev dependencies, handles sourcemaps appropriately, and ensures manifest compliance.
 
 ## ✅ Completed 
+- [x] **User Onboarding Flow:** Implement a `chrome.runtime.onInstalled` listener to open a Welcome/Onboarding page that explains how the zero-latency, local-first proxy works.
 - [x] **Dynamic Domain Gatekeeper (UI):** Built the SPA Popup UI for domain config, implemented runtime `chrome.permissions.request()` without `<all_urls>`, polished the refresh UX, and added privacy-first dynamic module loading in Vite.
 - [x] **Dynamic Domain Gatekeeper (Data Layer):** Implemented `chrome.storage.sync` Domain Configuration state with Zod schemas, discriminated unions, and a synchronous `DomainGatekeeper` class for zero-latency URL checking. Updated `manifest.json` to properly declare the Big 5 default domains and the `scripting` permission, strictly avoiding `<all_urls>`.
 - [x] **Playwright E2E Testing Framework:** Built a full-pipeline Playwright E2E testing framework that validates the 3-tier pipeline (DOM Paste -> Background -> Offscreen -> Sandbox WASM -> DOM Update). Integrates Live-site fallbacks (ChatGPT -> Gemini -> Mock) and simulates human interactions to avoid bot detection while testing Regex and NER redaction + copy unredaction.
@@ -23,9 +23,4 @@
 - [x] **Initialize Transformers.js (WASM in Sandbox):** The `Xenova/distilbert-base-multilingual-cased-ner-hrl` model is successfully running natively quantized. Fetch-delegation and WASM execution confirmed.
 
 ## 🔮 Backlog / Up Next (V1.0 Production Readiness)
-- [x] **Extension Branding & Assets:** Generate and integrate missing 16x16, 32x32, 48x48, and 128x128 icons into `manifest.json` and the repository.
-- [ ] **Dynamic Domain Gatekeeper:** Refactor `manifest.json` to support dynamic domain injection (or use `<all_urls>`) and update the existing Domain Gatekeeper in `content.ts` to respect user-configured custom AI domains, strictly adhering to *Rule 6* in `AGENTS.md`.
-- [ ] **User Onboarding Flow:** Implement a `chrome.runtime.onInstalled` listener to open a Welcome/Onboarding page that explains how the zero-latency, local-first proxy works.
-- [x] **E2E Testing Integration:** Add Playwright/Puppeteer E2E browser tests to validate paste/copy hijacking against actual (or mocked) ChatGPT/Claude DOM interfaces to ensure UI resilience.
-- [x] **Graceful Degradation & Network Recovery:** Implement fallback strategies (falling back to Layer 1 Regex-only) if the WebAssembly Model fails to download or initialize in the Sandbox.
 - [ ] **Release Automation:** Create a build script (`npm run build:zip`) for Chrome Web Store packaging that strips dev dependencies, handles sourcemaps appropriately, and ensures manifest compliance.

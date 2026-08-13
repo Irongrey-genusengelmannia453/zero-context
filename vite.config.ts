@@ -30,7 +30,6 @@ export default defineConfig(() => {
                         if (manifest.web_accessible_resources) {
                             for (const resource of manifest.web_accessible_resources) {
                                 resource.matches = ["<all_urls>"];
-                                resource.use_dynamic_url = true;
                             }
                         }
 
@@ -39,18 +38,19 @@ export default defineConfig(() => {
                 }
             }
         ],
-    build: {
-        modulePreload: false,
-        target: 'esnext',
-        rollupOptions: {
-            input: {
-                'src/offscreen/offscreen': 'src/offscreen/offscreen.html',
-                'src/sandbox/sandbox': 'src/sandbox/sandbox.html',
+        build: {
+            modulePreload: false,
+            target: 'esnext',
+            rollupOptions: {
+                input: {
+                    'onboarding': 'onboarding.html',
+                    'src/offscreen/offscreen': 'src/offscreen/offscreen.html',
+                    'src/sandbox/sandbox': 'src/sandbox/sandbox.html',
+                }
             }
+        },
+        worker: {
+            format: 'es'
         }
-    },
-    worker: {
-        format: 'es'
-    }
     };
 });

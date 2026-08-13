@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Welcome to ZeroContext</title>
+    <!-- Use Pico.css for semantic, sleek styling -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css" />
+    <style>
+      body {
+        padding: 2rem 0;
+      }
+      .hero {
+        text-align: center;
+        padding-top: 3rem;
+        padding-bottom: 2rem;
+      }
+      .anti-creepy {
+        border-left: 4px solid var(--pico-del-color);
+        padding-left: 1rem;
+        margin-top: 2rem;
+        margin-bottom: 2rem;
+        background: var(--pico-mark-background-color);
+        padding: 1rem 1rem 1rem 1.5rem;
+        border-radius: 4px;
+      }
+      .playground {
+        margin-top: 3rem;
+      }
+      .dummy-text-box {
+        background: var(--pico-form-element-background-color);
+        padding: 1rem;
+        border-radius: var(--pico-border-radius);
+        margin-bottom: 1rem;
+        font-family: monospace;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      #progress-container {
+        margin-top: 2rem;
+      }
+      #model-status-text {
+        text-align: center;
+        font-size: 0.85rem;
+        color: var(--pico-muted-color);
+      }
+    </style>
+  </head>
+  <body>
+    <main class="container">
+      <div class="hero">
+        <h1 style="font-size: 3rem; font-weight: 800; letter-spacing: -1px;">ZeroContext</h1>
+        <p style="font-size: 1.2rem; color: var(--pico-muted-color);">
+          All the intelligence. Zero the context.
+        </p>
+      </div>
+
+      <section>
+        <h2>Use AI without the privacy risk.</h2>
+        <p>
+          ZeroContext automatically masks sensitive data (like names, emails, and SSNs) 
+          entirely in your browser <strong>before</strong> it ever hits the cloud. 
+        </p>
+      </section>
+
+      <section class="anti-creepy">
+        <h3 style="color: var(--pico-color); margin-bottom: 0.5rem;">The Anti-Creepy Guarantee</h3>
+        <p style="margin-bottom: 0;">
+          Most extensions ask to read all websites. We think that's creepy. 
+          ZeroContext is locked out of your bank and email. It only wakes up on the 
+          specific AI sites you tell it to protect. We do not use the <code>&lt;all_urls&gt;</code> permission.
+        </p>
+      </section>
+
+      <section class="playground">
+        <h2>Try it out</h2>
+        <p>
+          Our neural engine runs 100% locally on your device. Copy the sensitive text below and paste it into the box to see ZeroContext in action.
+        </p>
+
+        <div class="dummy-text-box">
+          <span id="dummy-text">My SSN is 111-222-3333 and my name is John Doe.</span>
+          <button id="copy-btn" class="secondary outline" style="margin-bottom: 0; padding: 0.25rem 0.75rem;">Copy</button>
+        </div>
+
+        <textarea id="paste-zone" rows="3" placeholder="Paste here..."></textarea>
+
+        <div id="progress-container">
+          <p id="model-status-text">Initializing local AI model (happens once on install)...</p>
+          <progress id="model-progress" value="0" max="100"></progress>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="/src/ui/onboarding.ts"></script>
+  </body>
+</html>

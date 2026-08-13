@@ -25,6 +25,13 @@ chrome.tabs.onRemoved.addListener((tabId) => {
     tabOfflineErrorShown.delete(tabId);
 });
 
+// ─── Onboarding Flow ────────────────────────────────────────
+chrome.runtime.onInstalled.addListener((details) => {
+    if (details.reason === 'install') {
+        chrome.tabs.create({ url: chrome.runtime.getURL('onboarding.html') });
+    }
+});
+
 // Helper to dynamically check if a URL is an AI domain based on manifest and future user settings
 async function isAIDomain(targetUrl: string): Promise<boolean> {
     try {
@@ -69,7 +76,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     // ─── Offscreen Worker Pipeline (no tab ID required) ─────
-    if (message.action === "WORKER_PING") {
+    if (message.action === "PREWARM_MODEL" || message.action === "WORKER_PING") {
         sendWorkerTask('PING')
             .then(response => sendResponse({ status: "SUCCESS", data: response }))
             .catch(err => sendResponse({ status: "ERROR", data: (err as Error).message }));
