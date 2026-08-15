@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ZeroContext",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Use AI without the privacy risk. Automatically mask sensitive data entirely in your browser before it ever hits the cloud.",
   "icons": {
     "16": "icons/icon16.png",
