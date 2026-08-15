@@ -25,6 +25,57 @@ chrome.tabs.onRemoved.addListener((tabId) => {
     tabOfflineErrorShown.delete(tabId);
 });
 
+// ─── Smart Lifecycle Management ─────────────────────────────
+const IDLE_TEARDOWN_MINUTES = 1; // 1 minute (60s) configured for manual testing and verification
+
+function handleTabSwitch(url?: string) {
+    if (!url) {
+        startTeardownTimer();
+        return;
+    }
+
+    isAIDomain(url).then(isAI => {
+        if (isAI) {
+            chrome.alarms.clear('TEARDOWN_MODEL').catch(() => { });
+
+            chrome.offscreen.hasDocument().then(hasDoc => {
+                if (!hasDoc) {
+                    sendWorkerTask('PREWARM_MODEL').catch(err => console.error('[ZeroContext] Prewarm failed:', err));
+                }
+            });
+        } else {
+            startTeardownTimer();
+        }
+    });
+}
+
+function startTeardownTimer() {
+    chrome.alarms.create('TEARDOWN_MODEL', { delayInMinutes: IDLE_TEARDOWN_MINUTES });
+}
+
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+    if (alarm.name === 'TEARDOWN_MODEL') {
+        try {
+            const hasDoc = await chrome.offscreen.hasDocument();
+            if (hasDoc) {
+                await closeOffscreenDocument();
+            }
+        } catch (e) {
+            // Gracefully swallow error
+        }
+    }
+});
+
+// Track tab activation
+chrome.tabs.onActivated.addListener(async (activeInfo) => {
+    try {
+        const tab = await chrome.tabs.get(activeInfo.tabId);
+        handleTabSwitch(tab.url);
+    } catch (e) {
+        handleTabSwitch(undefined);
+    }
+});
+
 // ─── Onboarding Flow ────────────────────────────────────────
 chrome.runtime.onInstalled.addListener((details) => {
     if (details.reason === 'install') {
@@ -44,7 +95,7 @@ async function isAIDomain(targetUrl: string): Promise<boolean> {
 }
 
 // Ephemeral Memory Commitment - Flush tab state when navigating away from AI domains
-chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     if (changeInfo.status === 'loading') {
         tabOfflineErrorShown.delete(tabId);
     }
@@ -57,6 +108,10 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
             }
         });
     }
+
+    if (tab.active) {
+        handleTabSwitch(tab.url);
+    }
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -68,15 +123,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     chrome.tabs.sendMessage(t.id, {
                         type: 'MODEL_PROGRESS',
                         ...message.data
-                    }).catch(() => {});
+                    }).catch(() => { });
                 }
             }
         });
         return false;
     }
 
+    // ─── Live Debugging Relay ───────────────────────────────
+    if (message.action === "DEBUG_LOG") {
+        console.log(`[Relay] ${message.data}`);
+        sendResponse({ status: "SUCCESS" });
+        return true;
+    }
+
     // ─── Offscreen Worker Pipeline (no tab ID required) ─────
-    if (message.action === "PREWARM_MODEL" || message.action === "WORKER_PING") {
+    if (message.action === "PREWARM_MODEL") {
+        sendWorkerTask('PREWARM_MODEL')
+            .then(response => sendResponse({ status: "SUCCESS", data: response }))
+            .catch(err => sendResponse({ status: "ERROR", data: (err as Error).message }));
+        return true;
+    }
+
+    if (message.action === "WORKER_PING") {
         sendWorkerTask('PING')
             .then(response => sendResponse({ status: "SUCCESS", data: response }))
             .catch(err => sendResponse({ status: "ERROR", data: (err as Error).message }));
@@ -134,7 +203,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 const isDeepMode = storage.engineMode === 'deep' || storage.engineMode === undefined;
                 console.log(`[ZeroContext] Engine mode: ${storage.engineMode ?? 'deep (default)'}, isDeepMode: ${isDeepMode}`);
                 let pipelineError: string | undefined = undefined;
-                
+
                 let temporaryRegexMode = false;
                 try {
                     const sessionState = await chrome.storage.session.get('temporaryRegexMode');
@@ -154,7 +223,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             // Use mode: 'no-cors' to avoid CORS blocking. Any resolution (opaque response) is a success.
                             await fetch('https://huggingface.co/', { method: 'HEAD', mode: 'no-cors', cache: 'no-store', signal: controller.signal });
                             clearTimeout(timeout);
-                            
+
                             console.log("[ZeroContext] Auto-Recovery: Ping successful. Re-enabling Deep Mode.");
                             await chrome.storage.session.remove('temporaryRegexMode');
                             temporaryRegexMode = false;
@@ -168,7 +237,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 if (isDeepMode && !temporaryRegexMode) {
                     const stringsToProcess = extractTextForML(redacted);
                     console.log(`[ZeroContext] extractTextForML returned ${stringsToProcess.length} string(s), total length: ${stringsToProcess.reduce((a, s) => a + s.length, 0)}`);
-                    
+
                     if (stringsToProcess.length > 0) {
                         try {
                             const workerStart = performance.now();
@@ -229,15 +298,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         }
                     }
                 }
-                
+
                 // Layer 1: Deterministic Redaction (Regex engine cleans up anything ML missed like cards/emails)
                 redacted = redactText(tabId, redacted, vaultManager);
-                
+
                 const pipelineEnd = performance.now();
                 console.log(`[ZeroContext] Total pipeline: ${(pipelineEnd - pipelineStart).toFixed(0)}ms`);
 
                 sendResponse({ status: "SUCCESS", data: redacted, error: pipelineError });
-            }  
+            }
             else if (message.action === "UNREDACT_TEXT") {
                 console.log("[ZeroContext] Un-redacting payload...");
                 const storage = await chrome.storage.local.get(['isRedactionEnabled']);
@@ -247,7 +316,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 }
                 const restored = vaultManager.unredactText(tabId, message.payload);
                 sendResponse({ status: "SUCCESS", data: restored });
-            } 
+            }
             else {
                 sendResponse({ status: "ERROR", data: "Unknown action." });
             }

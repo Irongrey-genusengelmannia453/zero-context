@@ -17,6 +17,16 @@ import type {
 
 console.log('[ZeroContext] Offscreen bridge initialized.');
 
+// Helper to relay logs to the Background Service Worker console for live debugging
+function logToBackground(message: string) {
+    console.log(`[ZeroContext:Offscreen] ${message}`);
+    chrome.runtime.sendMessage({
+        target: 'BACKGROUND',
+        action: 'DEBUG_LOG',
+        data: `[Offscreen] ${message}`
+    }).catch(() => {});
+}
+
 // ─── Sandbox iframe instantiation ───────────────────────────
 // The sandbox page is declared in manifest.json under "sandbox".
 // We embed it as an invisible iframe and communicate via postMessage.
@@ -40,6 +50,7 @@ window.addEventListener('message', async (event: MessageEvent) => {
         const shortUrl = (data.url as string).split('/').slice(-2).join('/');
         console.log(`[ZeroContext:Offscreen] Fetch delegation request: ${shortUrl}`);
         try {
+            // Reverted to original cache name to prevent stranding dead data
             const cache = await caches.open('zerocontext-models');
             const controller = new AbortController();
             const onOffline = () => {
@@ -49,73 +60,60 @@ window.addEventListener('message', async (event: MessageEvent) => {
             window.addEventListener('offline', onOffline);
             
             let response;
+            let isCachedHit = false;
             try {
-                if (!navigator.onLine) throw new Error("NETWORK_OFFLINE");
+                response = await cache.match(data.url, { ignoreSearch: true, ignoreVary: true });
                 
-                response = await cache.match(data.url);
+                // If the cache returns a 1-byte file (from the previous Range request bug),
+                // it is corrupted. We evict it dynamically instead of stranding dead bytes on disk.
+                if (response) {
+                    const contentLength = parseInt(response.headers.get('Content-Length') || '0', 10);
+                    if (contentLength <= 1) {
+                        await cache.delete(data.url, { ignoreSearch: true, ignoreVary: true });
+                        response = undefined; // Force a MISS
+                    }
+                }
+
                 if (!response) {
-                    console.log(`[ZeroContext:Offscreen] Cache MISS — downloading: ${shortUrl}`);
+                    if (!navigator.onLine) throw new Error("NETWORK_OFFLINE");
                     
                     data.init = data.init || {};
                     data.init.signal = controller.signal;
                     response = await fetch(data.url, data.init);
                     
-                    if (response.ok) {
-                        await cache.put(data.url, response.clone());
-                        console.log(`[ZeroContext:Offscreen] Cached: ${shortUrl}`);
-                    } else {
+                    if (!response.ok) {
                         console.error(`[ZeroContext:Offscreen] Download failed (${response.status}): ${shortUrl}`);
+                        throw new Error(`HTTP ${response.status}`);
                     }
+                    
+                    // We DO NOT cache here. We cache the fully stitched ArrayBuffer below.
                 } else {
-                    console.log(`[ZeroContext:Offscreen] Cache HIT: ${shortUrl}`);
+                    isCachedHit = true;
                 }
                 
-                let arrayBuffer: ArrayBuffer;
-                if (!response.body) {
-                    arrayBuffer = await response.arrayBuffer();
-                } else {
-                    const reader = response.body.getReader();
-                    const chunks: Uint8Array[] = [];
-                    let totalLength = 0;
-                    let isDone = false;
+                // Native arrayBuffer() is vastly more efficient than manual JS chunking
+                const arrayBuffer = await response.arrayBuffer();
+
+                // If this was a network hit AND a full 200 OK response, cache it.
+                // Do NOT cache 206 Partial Content or errors.
+                if (!isCachedHit && response.status === 200) {
+                    const cacheBuffer = arrayBuffer.slice(0);
                     
-                    while (!isDone) {
-                        const readPromise = reader.read();
-                        
-                        // Watchdog timer: If 5 seconds pass without a chunk, abort
-                        const watchdog = new Promise<never>((_, reject) => {
-                            setTimeout(() => reject(new Error("WATCHDOG_TIMEOUT")), 5000);
-                        });
-                        
-                        try {
-                            const result = await Promise.race([readPromise, watchdog]);
-                            const { done, value } = result as ReadableStreamReadResult<Uint8Array>;
-                            isDone = done;
-                            if (value) {
-                                chunks.push(value);
-                                totalLength += value.length;
-                            }
-                        } catch (err) {
-                            reader.cancel().catch(() => {});
-                            console.error(`[ZeroContext:Offscreen] Mid-download stream interrupted: ${shortUrl}`, err);
-                            throw new Error("FETCH_STREAM_INTERRUPTED");
+                    // Reconstruct the response with generic headers to strip Hugging Face's expiring CDN headers
+                    const cacheResponse = new Response(cacheBuffer, {
+                        status: 200,
+                        headers: {
+                            'Content-Type': response.headers.get('Content-Type') || 'application/octet-stream',
+                            'Content-Length': String(cacheBuffer.byteLength),
                         }
-                    }
-                    
-                    // Stitch chunks back together
-                    const combined = new Uint8Array(totalLength);
-                    let offset = 0;
-                    for (const chunk of chunks) {
-                        combined.set(chunk, offset);
-                        offset += chunk.length;
-                    }
-                    arrayBuffer = combined.buffer;
+                    });
+
+                    await cache.put(data.url, cacheResponse);
                 }
                 
                 const headers: Record<string, string> = {};
                 response.headers.forEach((value, key) => { headers[key] = value; });
                 
-                console.log(`[ZeroContext:Offscreen] Sending ${arrayBuffer.byteLength} bytes back to sandbox for: ${shortUrl}`);
                 event.source?.postMessage({
                     action: 'FETCH_RESPONSE',
                     requestId: data.requestId,
@@ -145,6 +143,7 @@ window.addEventListener('message', async (event: MessageEvent) => {
     if (data.action === 'SANDBOX_LOG') {
         const level = data.level === 'error' ? 'error' : data.level === 'warn' ? 'warn' : 'log';
         console[level](`[ZeroContext:Sandbox→Offscreen] ${data.message}`);
+        logToBackground(`[Sandbox] ${data.message}`);
         return;
     }
 
@@ -187,12 +186,9 @@ chrome.runtime.onMessage.addListener(
 
         // Register callback for when the sandbox responds
         pendingCallbacks.set(taskId, (sandboxResponse: WorkerResponse) => {
-            console.log(`[ZeroContext:Offscreen] Sandbox responded for task ${taskId}, routing to background...`);
-            // CRITICAL FIX: Use chrome.runtime.sendMessage() to send the response
-            // as a NEW message to the background. The background's initOffscreenResponseListener
-            // is listening on chrome.runtime.onMessage for messages with target: 'BACKGROUND'.
-            // Previously this used sendResponse(), but that sends via the request-reply channel
-            // which the background was NOT listening on — causing every response to be lost.
+            // Use chrome.runtime.sendMessage() to send the response as a NEW message to the background.
+            // The background's initOffscreenResponseListener is listening on chrome.runtime.onMessage
+            // for messages with target: 'BACKGROUND'.
             chrome.runtime.sendMessage({
                 target: 'BACKGROUND',
                 status: sandboxResponse.status,

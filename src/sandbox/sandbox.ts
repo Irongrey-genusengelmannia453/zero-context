@@ -14,6 +14,7 @@
 import { pipeline, env } from '@huggingface/transformers';
 import type { TokenClassificationPipeline } from '@huggingface/transformers';
 import type { NerEntity } from '../types/ner';
+import { extractFetchUrl, isModelDownloadUrl } from './fetchHelper';
 
 // ─── Relay Logger ───────────────────────────────────────────
 // Sandbox console is invisible to the user. Relay critical logs
@@ -35,19 +36,27 @@ const FETCH_DELEGATION_TIMEOUT = 120_000; // 120s — model files can be large
 const originalFetch = globalThis.fetch;
 
 globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    const urlStr = input.toString();
-    // Only intercept HuggingFace model downloads
-    if (urlStr.includes('huggingface.co')) {
-        const shortUrl = urlStr.split('/').slice(-2).join('/');
-        relayLog('log', `Fetch intercepted: ${shortUrl}`);
+    const urlStr = extractFetchUrl(input);
+    
+    // Check for Range headers (Transformers.js v4 probes with Range: bytes=0-0)
+    let isRangeRequest = false;
+    if (init && init.headers) {
+        const h = new Headers(init.headers);
+        if (h.has('range') || h.has('Range')) {
+            isRangeRequest = true;
+        }
+    }
 
+    // Intercept Hugging Face downloads, BUT bypass our offscreen cache for Range probes.
+    // Probes should go directly to the network to prevent transferring large arrays into memory for a 1-byte probe.
+    if (isModelDownloadUrl(urlStr) && !isRangeRequest) {
         return new Promise<Response>((resolve, reject) => {
             const requestId = crypto.randomUUID();
 
-            // CRITICAL FIX: Add timeout so a lost postMessage doesn't hang forever
+            // Add timeout so a lost postMessage doesn't hang forever
             const timeout = setTimeout(() => {
                 window.removeEventListener('message', listener);
-                reject(new Error(`FETCH_DELEGATION_TIMEOUT: ${shortUrl} did not respond within ${FETCH_DELEGATION_TIMEOUT}ms`));
+                reject(new Error(`FETCH_DELEGATION_TIMEOUT: ${urlStr} did not respond within ${FETCH_DELEGATION_TIMEOUT}ms`));
             }, FETCH_DELEGATION_TIMEOUT);
 
             const listener = (event: MessageEvent) => {
@@ -55,7 +64,6 @@ globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise
                     clearTimeout(timeout);
                     window.removeEventListener('message', listener);
                     if (event.data.status === 'SUCCESS') {
-                        relayLog('log', `Fetch complete: ${shortUrl} (${(event.data.buffer?.byteLength ?? 0)} bytes)`);
                         const response = new Response(event.data.buffer, {
                             status: 200,
                             headers: new Headers(event.data.headers)
@@ -64,18 +72,36 @@ globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise
                         Object.defineProperty(response, 'url', { value: urlStr });
                         resolve(response);
                     } else {
-                        relayLog('error', `Fetch failed: ${shortUrl} — ${event.data.error}`);
+                        relayLog('error', `Fetch failed: ${urlStr} — ${event.data.error}`);
                         reject(new Error(event.data.error));
                     }
                 }
             };
             window.addEventListener('message', listener);
 
+            let safeInit: Record<string, any> | undefined = undefined;
+            if (init) {
+                safeInit = { ...init };
+                
+                // 1. Sanitize Headers (Headers object is not cloneable)
+                if (init.headers) {
+                    const headersObj: Record<string, string> = {};
+                    const h = new Headers(init.headers);
+                    h.forEach((value, key) => { headersObj[key] = value; });
+                    safeInit.headers = headersObj;
+                }
+                
+                // 2. Sanitize AbortSignal (AbortSignal is not cloneable)
+                if (safeInit.signal) {
+                    delete safeInit.signal;
+                }
+            }
+
             parent.postMessage({
                 action: 'FETCH_REQUEST',
                 requestId,
                 url: urlStr,
-                init
+                init: safeInit
             }, '*');
         });
     }
@@ -85,17 +111,18 @@ globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise
 // Configure environment
 env.allowLocalModels = false;
 env.useBrowserCache = false; // Disabled locally; caching is delegated to Offscreen via fetch override
+env.fetch = globalThis.fetch;
 
-// CRITICAL FIX: Force WASM-only execution. Disable WebGPU probing entirely.
-// Transformers.js v3 probes for WebGPU even when device='wasm', causing
+// Force WASM-only execution. Disable WebGPU probing entirely.
+// Transformers.js v3+ probes for WebGPU even when device='wasm', causing
 // requestAdapter() calls that can crash or hang in sandboxed iframes.
 if (env.backends?.onnx?.wasm) {
     env.backends.onnx.wasm.proxy = false;
 }
 
 // ─── Model Singleton ────────────────────────────────────────
-// CRITICAL FIX: Store the PROMISE, not the result. This prevents
-// the race condition where the eager load and PROCESS_TEXT handler
+// Store the PROMISE, not the result. This prevents
+// race conditions where the eager load and PROCESS_TEXT handler
 // both see `instance === null` and double-load the model.
 class PipelineSingleton {
     static task = 'token-classification';
@@ -136,7 +163,8 @@ window.addEventListener('message', async (event: MessageEvent) => {
 
     try {
         switch (action) {
-            case 'PING': {
+            case 'PING':
+            case 'PREWARM_MODEL': {
                 respond('SUCCESS', {
                     pong: true,
                     timestamp: Date.now(),
@@ -182,15 +210,10 @@ window.addEventListener('message', async (event: MessageEvent) => {
 
                 for (const text of texts) {
                     relayLog('log', `Running inference on text (${text.length} chars)...`);
-                    const inferStart = performance.now();
                     const output = await model(text, { aggregation_strategy: 'simple' });
-                    const inferEnd = performance.now();
-                    relayLog('log', `Inference done: ${(inferEnd - inferStart).toFixed(0)}ms`);
 
-                    // CRITICAL: Transformers.js returns a custom TokenClassificationOutput class,
-                    // NOT a plain Array. postMessage uses the structured clone algorithm which may
-                    // silently drop properties from custom classes. We must explicitly convert to
-                    // plain JSON-safe objects before sending through postMessage.
+                    // Transformers.js returns a custom TokenClassificationOutput class.
+                    // We must convert to plain objects before structured cloning via postMessage.
                     const plainEntities: NerEntity[] = [];
                     for (const entity of output) {
                         plainEntities.push({
