@@ -122,7 +122,7 @@ describe('Smart Lifecycle Management (Red Phase)', () => {
         await vi.runAllTimersAsync();
 
         // Assert alarm is created
-        expect(mockAlarmsCreate).toHaveBeenCalledWith('TEARDOWN_MODEL', { delayInMinutes: 1 });
+        expect(mockAlarmsCreate).toHaveBeenCalledWith('TEARDOWN_MODEL', { delayInMinutes: 5 });
 
         // Trigger the alarm manually
         const alarmCallback = mockAlarmsOnAlarmAddListener.mock.calls[0][0];

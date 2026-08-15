@@ -26,7 +26,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 });
 
 // ─── Smart Lifecycle Management ─────────────────────────────
-const IDLE_TEARDOWN_MINUTES = 1; // 1 minute (60s) configured for manual testing and verification
+const IDLE_TEARDOWN_MINUTES = 5; // 5 minutes to prevent aggressive unloads
 
 function handleTabSwitch(url?: string) {
     if (!url) {
