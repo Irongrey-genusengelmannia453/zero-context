@@ -6,6 +6,8 @@ console.log("[ZeroContext] Content script initialized. Watching for inputs.");
 const uiManager = new ZeroContextToast();
 let isProcessingText = false;
 let isAiDomain = false;
+let localVaultCache: Record<string, string> = {};
+let isPillar2Writing = false; // Guard to prevent Pillar 1 from re-processing our writes
 
 // Check if we are on an AI domain on load
 chrome.runtime.sendMessage({ action: "CHECK_AI_DOMAIN", payload: window.location.href }, (response) => {
@@ -113,74 +115,130 @@ window.addEventListener("paste", async (event: ClipboardEvent) => {
     }
 }, true);
 
-// Listener for native Ctrl+C or standard DOM copy events
-document.addEventListener("copy", (event: ClipboardEvent) => {
-    let copiedText = window.getSelection()?.toString() || "";
+// ─── Request VAULT_SYNC on load to survive page refreshes ────
+// If the user refreshes the tab, localVaultCache is wiped. Ask background
+// for the current reverse map so previously-redacted text can still be unredacted.
+chrome.runtime.sendMessage({ action: "REQUEST_VAULT_SYNC" }).catch(() => {});
 
-    if (!copiedText && event.clipboardData) {
-        copiedText = event.clipboardData.getData("text/plain");
-    }
-
-    if (!copiedText.trim()) return;
-
-    setTimeout(async () => {
-        try {
-            const response = await chrome.runtime.sendMessage({
-                action: "UNREDACT_TEXT",
-                payload: copiedText
-            });
-
-            if (response && response.status === "SUCCESS") {
-                if (response.data !== copiedText) {
-                    await navigator.clipboard.writeText(response.data);
-                    console.log("[ZeroContext] Clipboard un-redacted successfully (Ctrl+C).");
-                }
-            }
-        } catch (err) {
-            console.error("[ZeroContext] Failed to unredact clipboard:", err);
-        }
-    }, 50); 
-});
-
-// Listener for intercepted programmatic clipboard writes from the MAIN world (e.g. Chat UI "Copy" button)
-window.addEventListener("message", async (e: MessageEvent) => {
-    if (e.source !== window || e.data?.type !== "zerocontext_intercept_copy") return;
+/**
+ * Unredacts a string using the provided cache.
+ * Sorts tokens by length descending to prevent partial replacements.
+ */
+function unredactString(text: string, cache: Record<string, string>): { result: string, mutated: boolean } {
+    const tokens = Object.keys(cache).sort((a, b) => b.length - a.length);
+    let result = text;
+    let mutated = false;
     
-    const { eventId, text } = e.data;
+    for (const token of tokens) {
+        if (result.includes(token)) {
+            result = result.replaceAll(token, cache[token]);
+            mutated = true;
+        }
+    }
+    
+    return { result, mutated };
+}
 
-    if (!text || !text.trim()) {
-        dispatchResponse(eventId, text);
+// Intercept native DOM copy events (Ctrl+C / Cmd+C)
+// Preserves rich-text formatting (text/html) by traversing and mutating TextNodes safely.
+// We use the capture phase (true) so we intercept the event BEFORE React/ChatGPT can.
+document.addEventListener("copy", (event: ClipboardEvent) => {
+    // Skip if this copy event was triggered by Pillar 2's execCommand write
+    if (isPillar2Writing) return;
+    
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+
+    if (Object.keys(localVaultCache).length === 0) {
         return;
     }
 
-    try {
-        const response = await chrome.runtime.sendMessage({
-            action: "UNREDACT_TEXT",
-            payload: text
-        });
+    const range = sel.getRangeAt(0);
+    const tempDiv = document.createElement("div");
+    tempDiv.appendChild(range.cloneContents());
 
-        if (response && response.status === "SUCCESS") {
-            dispatchResponse(eventId, response.data);
-            console.log("[ZeroContext] Programmatic clipboard write un-redacted successfully.");
-        } else {
-            dispatchResponse(eventId, text); // Fallback to original
+    const walker = document.createTreeWalker(tempDiv, NodeFilter.SHOW_TEXT, null);
+    let node: Node | null;
+
+    let wasMutated = false;
+    while ((node = walker.nextNode())) {
+        if (node.nodeValue) {
+            const { result, mutated } = unredactString(node.nodeValue, localVaultCache);
+            if (mutated) {
+                node.nodeValue = result;
+                wasMutated = true;
+            }
         }
-    } catch (error) {
-        console.error("[ZeroContext] Error processing intercepted copy:", error);
-        dispatchResponse(eventId, text); // Fallback to original
+    }
+
+    if (wasMutated) {
+        event.preventDefault();
+        event.stopImmediatePropagation(); // Prevent React/ChatGPT from overriding this copy
+        
+        tempDiv.style.position = 'absolute';
+        tempDiv.style.left = '-9999px';
+        document.body.appendChild(tempDiv);
+        const unredactedText = tempDiv.innerText || tempDiv.textContent || "";
+        document.body.removeChild(tempDiv);
+
+        event.clipboardData?.setData("text/plain", unredactedText);
+        event.clipboardData?.setData("text/html", tempDiv.innerHTML);
+    }
+}, true); // <--- Capture phase intercepts before bubbling phase listeners
+
+// ─── Pillar 2: Programmatic Copy Interception ────────────────
+// The MAIN world script (programmatic_copy_override.ts) dispatches
+// 'ZeroContext_Programmatic_Copy_Req' and suppresses the page's write.
+// This ISOLATED world listener performs the actual clipboard write.
+// We use document.execCommand('copy') because the clipboardWrite permission
+// bypasses user gesture requirements for execCommand, but NOT for the Async
+// Clipboard API (navigator.clipboard.writeText).
+
+/**
+ * Writes text to clipboard using the execCommand approach.
+ * Works with the clipboardWrite permission without a user gesture.
+ */
+function writeClipboardViaExecCommand(text: string): void {
+    isPillar2Writing = true;
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    textarea.style.top = '-9999px';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand('copy');
+    document.body.removeChild(textarea);
+    // Reset guard after a microtask so the synchronous copy event from execCommand has fired.
+    Promise.resolve().then(() => { isPillar2Writing = false; });
+}
+
+window.addEventListener('ZeroContext_Programmatic_Copy_Req', (e: Event) => {
+    const customEvent = e as CustomEvent<string>;
+    const text = customEvent.detail;
+
+    if (!text || !text.trim() || Object.keys(localVaultCache).length === 0) {
+        writeClipboardViaExecCommand(text ?? "");
+        return;
+    }
+
+    const { result: unredactedData, mutated } = unredactString(text, localVaultCache);
+    writeClipboardViaExecCommand(unredactedData);
+    
+    if (mutated) {
+        console.debug("[ZeroContext] Programmatic copy unredacted successfully.");
     }
 });
 
-function dispatchResponse(eventId: string, finalStr: string) {
-    window.postMessage({
-        type: "zerocontext_unredact_response",
-        eventId: eventId,
-        text: finalStr
-    }, "*");
-}
-
 // ─── Global Progress Listeners (from Background) ─────────────
 chrome.runtime.onMessage.addListener((msg) => {
+    if (msg.action === 'VAULT_SYNC' && msg.reverseMap) {
+        localVaultCache = msg.reverseMap;
+        console.debug(`[ZeroContext] Vault synced. Cache size: ${Object.keys(localVaultCache).length}`);
+        return;
+    }
+
     if (msg.type === 'MODEL_PROGRESS') {
         const status = msg.status;
         if (status === 'progress' || status === 'downloading' || status === 'initiate') {
@@ -191,6 +249,8 @@ chrome.runtime.onMessage.addListener((msg) => {
             // will be called when the REDACT_TEXT promise resolves.
             if (isProcessingText) {
                 uiManager.showIndeterminateRedacting();
+            } else {
+                uiManager.hide();
             }
         }
     }

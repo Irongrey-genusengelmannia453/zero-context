@@ -74,7 +74,7 @@
                 "*://chat.deepseek.com/*"
             ],
             "js": [
-                "src/injected.ts"
+                "src/programmatic_copy_override.ts"
             ],
             "world": "MAIN",
             "run_at": "document_start"

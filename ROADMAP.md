@@ -7,6 +7,8 @@
 - [ ] **Release Automation:** Create a build script (`npm run build:zip`) for Chrome Web Store packaging that strips dev dependencies, handles sourcemaps appropriately, and ensures manifest compliance.
 
 ## ✅ Completed 
+- [x] **Production Readiness & Chrome Web Store Compliance:** Fixed remote code execution violation by forcing `Transformers.js` to load WASM bundles locally. Fixed `navigator.clipboard` `NotAllowedError` bug in content scripts by synchronously caching `VAULT_SYNC` reverse-mapping state from the background. Bumped version to 1.0.0.
+- [x] **Smart Lifecycle Management:** Implemented predictive pre-warming and idle teardown for the WASM ML model (saving ~500MB of RAM) using `chrome.tabs.onActivated` and `onUpdated` triggers, maintaining global state in the Background script, and bridging actions to the Sandboxed Iframe.
 - [x] **User Onboarding Flow:** Implement a `chrome.runtime.onInstalled` listener to open a Welcome/Onboarding page that explains how the zero-latency, local-first proxy works.
 - [x] **Dynamic Domain Gatekeeper (UI):** Built the SPA Popup UI for domain config, implemented runtime `chrome.permissions.request()` without `<all_urls>`, polished the refresh UX, and added privacy-first dynamic module loading in Vite.
 - [x] **Dynamic Domain Gatekeeper (Data Layer):** Implemented `chrome.storage.sync` Domain Configuration state with Zod schemas, discriminated unions, and a synchronous `DomainGatekeeper` class for zero-latency URL checking. Updated `manifest.json` to properly declare the Big 5 default domains and the `scripting` permission, strictly avoiding `<all_urls>`.

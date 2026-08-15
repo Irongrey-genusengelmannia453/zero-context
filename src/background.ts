@@ -159,6 +159,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return true;
     }
 
+    if (message.action === "REQUEST_VAULT_SYNC") {
+        const tabId = sender.tab?.id;
+        if (tabId) {
+            vaultManager.ensureHydrated().then(() => {
+                const reverseMap = vaultManager.getReverseMap(tabId);
+                if (Object.keys(reverseMap).length > 0) {
+                    chrome.tabs.sendMessage(tabId, {
+                        action: "VAULT_SYNC",
+                        reverseMap
+                    }).catch(() => {});
+                }
+            });
+        }
+        sendResponse({ status: "OK" });
+        return true;
+    }
+
     if (message.action === "WORKER_HEAVY_WORKLOAD") {
         sendWorkerTask('SIMULATE_HEAVY_WORKLOAD', message.payload)
             .then(response => sendResponse({ status: "SUCCESS", data: response }))
@@ -256,8 +273,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                                         const errorData = String(response.data);
                                         if (errorData.includes('FETCH_STREAM_INTERRUPTED')) {
                                             pipelineError = "Network interrupted during AI download. Falling back to normal mode.";
+                                        } else if (errorData.includes('Failed to fetch') || errorData.includes('NetworkError')) {
+                                            pipelineError = "Model needs to be downloaded but internet connection is not available. Switching to normal mode.";
                                         } else {
-                                            pipelineError = "Model needs to be downloaded but couldn't due to internet connection not available. Switching to normal mode temporarily.";
+                                            pipelineError = `AI Initialization Error: ${errorData}. Switching to normal mode.`;
                                         }
                                         break;
                                     } else {
@@ -301,6 +320,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
                 // Layer 1: Deterministic Redaction (Regex engine cleans up anything ML missed like cards/emails)
                 redacted = redactText(tabId, redacted, vaultManager);
+
+                // Sync vault state to content script for synchronous un-redaction on copy
+                chrome.tabs.sendMessage(tabId, {
+                    action: "VAULT_SYNC",
+                    reverseMap: vaultManager.getReverseMap(tabId)
+                }).catch(() => {});
 
                 const pipelineEnd = performance.now();
                 console.log(`[ZeroContext] Total pipeline: ${(pipelineEnd - pipelineStart).toFixed(0)}ms`);
