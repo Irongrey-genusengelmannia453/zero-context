@@ -3,7 +3,8 @@ import { defineConfig } from 'vite';
 import { crx } from '@crxjs/vite-plugin';
 import manifest from './manifest.json';
 
-export default defineConfig(() => {
+export default defineConfig(({ mode }) => {
+    const isProd = mode === 'production';
     return {
         test: {
             exclude: ['node_modules', 'dist', '.idea', '.git', '.cache', 'tests/e2e/**'],
@@ -39,6 +40,7 @@ export default defineConfig(() => {
             }
         ],
         build: {
+            sourcemap: false,
             chunkSizeWarningLimit: 2000,
             modulePreload: false,
             target: 'esnext',
@@ -49,6 +51,9 @@ export default defineConfig(() => {
                     'src/sandbox/sandbox': 'src/sandbox/sandbox.html',
                 }
             }
+        },
+        esbuild: {
+            drop: isProd ? ['console', 'debugger'] : [],
         },
         worker: {
             format: 'es'

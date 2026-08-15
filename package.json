@@ -1,19 +1,22 @@
 {
   "name": "zero-context",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "scripts": {
     "dev": "vite build --watch",
     "test": "vitest",
     "test:e2e": "playwright test",
+    "typecheck": "tsc --noEmit",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "release": "node scripts/bump.js"
   },
   "devDependencies": {
     "@crxjs/vite-plugin": "^2.7.1",
     "@playwright/test": "^1.62.1",
     "@types/chrome": "^0.2.2",
+    "adm-zip": "^0.6.0",
     "typescript": "~6.0.2",
     "vite": "^8.1.1",
     "vitest": "^4.1.10"

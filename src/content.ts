@@ -177,9 +177,18 @@ document.addEventListener("copy", (event: ClipboardEvent) => {
         
         tempDiv.style.position = 'absolute';
         tempDiv.style.left = '-9999px';
-        document.body.appendChild(tempDiv);
-        const unredactedText = tempDiv.innerText || tempDiv.textContent || "";
-        document.body.removeChild(tempDiv);
+        tempDiv.style.opacity = '0';
+        tempDiv.style.pointerEvents = 'none';
+        
+        let unredactedText = "";
+        try {
+            document.body.appendChild(tempDiv);
+            unredactedText = tempDiv.innerText || tempDiv.textContent || "";
+        } finally {
+            if (tempDiv.parentNode) {
+                document.body.removeChild(tempDiv);
+            }
+        }
 
         event.clipboardData?.setData("text/plain", unredactedText);
         event.clipboardData?.setData("text/html", tempDiv.innerHTML);
@@ -206,12 +215,19 @@ function writeClipboardViaExecCommand(text: string): void {
     textarea.style.left = '-9999px';
     textarea.style.top = '-9999px';
     textarea.style.opacity = '0';
-    document.body.appendChild(textarea);
-    textarea.select();
-    document.execCommand('copy');
-    document.body.removeChild(textarea);
-    // Reset guard after a microtask so the synchronous copy event from execCommand has fired.
-    Promise.resolve().then(() => { isPillar2Writing = false; });
+    textarea.style.pointerEvents = 'none';
+    
+    try {
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+    } finally {
+        if (textarea.parentNode) {
+            document.body.removeChild(textarea);
+        }
+        // Reset guard after a microtask so the synchronous copy event from execCommand has fired.
+        Promise.resolve().then(() => { isPillar2Writing = false; });
+    }
 }
 
 window.addEventListener('ZeroContext_Programmatic_Copy_Req', (e: Event) => {
