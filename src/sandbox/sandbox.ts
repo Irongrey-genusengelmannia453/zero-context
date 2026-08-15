@@ -79,9 +79,9 @@ globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise
             };
             window.addEventListener('message', listener);
 
-            let safeInit: Record<string, any> | undefined = undefined;
+            let safeInit: Record<string, unknown> | undefined = undefined;
             if (init) {
-                safeInit = { ...init };
+                safeInit = { ...init } as Record<string, unknown>;
                 
                 // 1. Sanitize Headers (Headers object is not cloneable)
                 if (init.headers) {
@@ -113,11 +113,16 @@ env.allowLocalModels = false;
 env.useBrowserCache = false; // Disabled locally; caching is delegated to Offscreen via fetch override
 env.fetch = globalThis.fetch;
 
+import wasmUrl from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.wasm?url';
+import mjsUrl from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.mjs?url';
+
 // Force WASM-only execution. Disable WebGPU probing entirely.
-// Transformers.js v3+ probes for WebGPU even when device='wasm', causing
-// requestAdapter() calls that can crash or hang in sandboxed iframes.
 if (env.backends?.onnx?.wasm) {
     env.backends.onnx.wasm.proxy = false;
+    env.backends.onnx.wasm.wasmPaths = {
+        wasm: wasmUrl,
+        mjs: mjsUrl
+    };
 }
 
 // ─── Model Singleton ────────────────────────────────────────

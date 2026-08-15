@@ -176,4 +176,9 @@ export class VaultManager {
         delete this.cache[key];
         await chrome.storage.session.remove(key);
     }
+
+    public getReverseMap(tabId: number): Record<string, string> {
+        const key = tabId.toString();
+        return this.cache[key]?.reverse || {};
+    }
 }
