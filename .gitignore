@@ -26,6 +26,7 @@ dist-ssr
 *repomix*
 *playwright-report/*
 *test-results/*
+webstore/
 
 # Releases
 releases/
