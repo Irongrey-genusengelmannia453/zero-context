@@ -150,38 +150,34 @@ ZeroContext Redacted: "Send the invoice for PERSON.el64_1 (user.5811@example.com
 
 ZeroContext features an automated two-way restoration pipeline operating across both user-initiated and programmatic copy actions:
 
-```
-                  ┌─────────────────────────────────────────────────────────┐
-                  │                    AI Response Text                     │
-                  │   "Please verify PERSON.el64_1 and user.5811@corp.com"  │
-                  └────────────────────────────┬────────────────────────────┘
-                                               │
-                       ┌───────────────────────┴───────────────────────┐
-                       ▼                                               ▼
-        [Pillar 1: Native Copy Event]                  [Pillar 2: Programmatic Button]
-         User selects text & presses                    User clicks "Copy" button in
-               Ctrl+C / Cmd+C                               ChatGPT / Claude UI
-                       │                                               │
-                       ▼                                               ▼
-         Document Capture Listener                     MAIN World Script Intercepts
-         (Walks DOM TextNodes safely;                  (Hooks Clipboard.prototype.write
-          preserves rich-text HTML)                     and writeText without gestures)
-                       │                                               │
-                       └───────────────────────┬───────────────────────┘
-                                               │
-                                               ▼
-                               ┌───────────────────────────────┐
-                               │     Reverse Vault Lookup      │
-                               │  Replaces tokens descending   │
-                               │  by length in TabVault memory │
-                               └───────────────┬───────────────┘
-                                               │
-                                               ▼
-                               ┌───────────────────────────────┐
-                               │       Restored Clipboard      │
-                               │  "Please verify Alice Smith   │
-                               │    and alice@corp.com"        │
-                               └───────────────────────────────┘
+```mermaid
+flowchart TD
+    AI["🤖 <b>AI Generated Response</b><br/><i>'Please verify PERSON.el64_1 and user.5811@corp.com'</i>"]
+
+    subgraph CaptureChannels ["Dual Capture Channels"]
+        direction LR
+        P1["<b>Pillar 1: Native Copy (Ctrl+C / Cmd+C)</b><br/>• Intercepts during Capture Phase<br/>• TreeWalker mutates TextNodes<br/>• Preserves rich HTML & layout"]
+        P2["<b>Pillar 2: Programmatic UI Copy Buttons</b><br/>• MAIN world script hooks <code>writeText</code><br/>• Intercepts one-click buttons on ChatGPT/Claude<br/>• Relays via CustomEvent to Isolated World"]
+    end
+
+    AI --> P1
+    AI --> P2
+
+    subgraph VaultEngine ["Bidirectional Ephemeral Vault"]
+        VAULT["🔑 <b>Length-Descending Reverse Lookup</b><br/><code>PERSON.el64_1_2</code> ➔ <i>Alice</i><br/><code>PERSON.el64_1</code> ➔ <i>Alice Smith</i><br/><code>user.5811@corp.com</code> ➔ <i>alice@corp.com</i>"]
+    end
+
+    P1 ==>|"Unredact Event"| VAULT
+    P2 ==>|"Unredact Event"| VAULT
+
+    OUT["📋 <b>Restored System Clipboard</b><br/><i>'Please verify Alice Smith and alice@corp.com'</i>"]
+    VAULT ==>|"Synchronous execCommand Write"| OUT
+
+    classDef default fill:#0f172a,stroke:#3b82f6,stroke-width:1.5px,color:#f8fafc;
+    classDef highlight fill:#1e1b4b,stroke:#8b5cf6,stroke-width:2px,color:#f8fafc;
+    classDef success fill:#064e3b,stroke:#10b981,stroke-width:2px,color:#f8fafc;
+    class VAULT highlight;
+    class OUT success;
 ```
 
 #### Pillar 1: Native Selection & Copy Interception (Capture Phase)
@@ -200,32 +196,35 @@ ZeroContext features an automated two-way restoration pipeline operating across 
 
 ZeroContext employs a tiered execution pipeline to combine high throughput with neural comprehension:
 
-```
-                            Raw User Paste
-                                  │
-                                  ▼
-           ┌──────────────────────────────────────────────┐
-           │        Layer 2: AST / Syntax Lexer           │
-           │  Separates code syntax / JSON keys from      │
-           │  string literals & comments (5ms)            │
-           └──────────────────────┬───────────────────────┘
-                                  │
-                                  ▼
-           ┌──────────────────────────────────────────────┐
-           │      Layer 3: Local WASM Neural Engine       │
-           │  DistilBERT NER Token Classification         │
-           │  Captures Names, Orgs, Locations (15-30ms)   │
-           └──────────────────────┬───────────────────────┘
-                                  │
-                                  ▼
-           ┌──────────────────────────────────────────────┐
-           │ Layer 1: Deterministic Engine & Gazetteers   │
-           │  Regex + Luhn Validation (0-5ms)             │
-           │  Cards, SSNs, SINs, Emails, Phones           │
-           └──────────────────────┬───────────────────────┘
-                                  │
-                                  ▼
-                        Sanitized Prompt Injected
+```mermaid
+flowchart TD
+    IN["📥 <b>Raw User Paste Event</b><br/><i>(Code snippets, customer tables, or prompts)</i>"]
+
+    subgraph L2 ["Layer 2: AST & Code Lexer (~5ms)"]
+        LEX["🔍 <b>Syntax & Key Filter</b><br/>• Identifies JSON structures & programming tokens<br/>• Protects object keys, variable names & code syntax<br/>• Extracts string literals & comments for AI inspection"]
+    end
+
+    subgraph L3 ["Layer 3: Local WASM Neural Engine (~15–30ms)"]
+        NER["🧠 <b>Quantized DistilBERT NER (WASM SIMD)</b><br/>• Token classification across multilingual entities<br/>• Captures Names (PER), Organizations (ORG), Locations (LOC)<br/>• Generates sub-token coreference aliases (e.g. PERSON.el64_1_2)"]
+    end
+
+    subgraph L1 ["Layer 1: Deterministic Engine & Gazetteers (~0–5ms)"]
+        DET["⚡ <b>Regex & Mathematical Checksums</b><br/>• Luhn Modulus-10 Credit Cards & Canadian SINs<br/>• Area & group validated US SSNs<br/>• RFC-compliant Emails & E.164 Phone numbers"]
+    end
+
+    OUT["✨ <b>Sanitized Prompt Injected into Chatbox</b><br/><i>(Safe for Cloud LLM processing)</i>"]
+
+    IN ==> L2
+    L2 ==>|"String Literals & Comments"| L3
+    L3 ==>|"Entity-Tagged Text"| L1
+    L1 ==>|"Zero-PII Clean Payload"| OUT
+
+    classDef default fill:#0f172a,stroke:#38bdf8,stroke-width:1.5px,color:#f8fafc;
+    classDef stage fill:#1e1b4b,stroke:#818cf8,stroke-width:2px,color:#f8fafc;
+    classDef prompt fill:#064e3b,stroke:#10b981,stroke-width:2px,color:#f8fafc;
+    class IN default;
+    class L2,L3,L1 stage;
+    class OUT prompt;
 ```
 
 ### Layer 1: Deterministic Engine & Mathematical Gazetteers (0–5ms)
@@ -251,27 +250,44 @@ ZeroContext employs a tiered execution pipeline to combine high throughput with 
 The architecture of ZeroContext is designed specifically to overcome the strict constraints of Chrome Extension Manifest V3 (MV3).
 
 ```mermaid
-graph TD
-    subgraph Browser Context
-        CS[content.ts <br/> Isolated World] <--> |DOM Events| DOM[AI Chatpage DOM <br/> ChatGPT / Claude]
-        MAIN[programmatic_copy_override.ts <br/> Main World] --> |CustomEvent| CS
+flowchart TB
+    subgraph BrowserContext ["🌐 Webpage DOM Context (ChatGPT / Claude / Gemini)"]
+        direction LR
+        DOM["🖥️ <b>Chat Page DOM</b><br/>Textarea / ContentEditable"]
+        CS["🛡️ <b>content.ts</b><br/><i>Isolated World</i><br/>• Paste Interception & HUD<br/>• Capture-phase Copy Walker"]
+        MAIN["⚡ <b>programmatic_copy_override.ts</b><br/><i>Main Execution World</i><br/>• Hooks <code>Clipboard.prototype</code><br/>• Catches UI Copy Buttons"]
+        
+        DOM <==>|"1. Intercepts Paste / Injects Sanitized Text"| CS
+        DOM -.->|"Captures Button Clicks"| MAIN
+        MAIN ==>|"2. CustomEvent Relay"| CS
     end
 
-    subgraph Chrome Extension Service Worker
-        BG[background.ts <br/> Dispatcher & Ephemeral Vault]
+    subgraph ExtensionWorker ["⚙️ Background Service Worker (MV3)"]
+        BG["🧠 <b>background.ts (Dispatcher & Vault)</b><br/>• Session-scoped Ephemeral Memory Vault<br/>• Layer 1 Regex & Luhn Engine<br/>• Predictive Pre-warming & Idle Teardown<br/>• Dynamic Content Script Registration"]
     end
 
-    subgraph Offscreen Document
-        OFF[offscreen.ts <br/> Bridge & Cache Manager]
+    subgraph OffscreenBridge ["🌉 Offscreen Document Bridge"]
+        OFF["📦 <b>offscreen.ts (DOM & Cache Bridge)</b><br/>• Access to Extension <code>CacheStorage</code><br/>• Model Download & Caching (<code>zerocontext-models</code>)<br/>• Cross-Thread Message Routing"]
     end
 
-    subgraph Sandboxed Iframe
-        SB[sandbox.ts <br/> Transformers.js WASM Engine]
+    subgraph SandboxEnv ["🧪 Sandboxed Iframe (Relaxed CSP)"]
+        SB["⚡ <b>sandbox.ts (AI Runtime)</b><br/>• Transformers.js DistilBERT WASM SIMD<br/>• Intercepted <code>fetch()</code> Cache Delegation<br/>• Zero-Copy <code>ArrayBuffer</code> Transfers"]
     end
 
-    CS <--> |chrome.runtime.sendMessage| BG
-    BG <--> |chrome.runtime.sendMessage| OFF
-    OFF <--> |window.postMessage / ArrayBuffer Transfer| SB
+    CS <==>|"3. chrome.runtime.sendMessage<br/>(REDACT_TEXT / VAULT_SYNC)"| BG
+    BG <==>|"4. chrome.runtime.sendMessage<br/>(OFFSCREEN Task Dispatch)"| OFF
+    OFF <==>|"5. window.postMessage & Transferable ArrayBuffer<br/>(Zero-Copy Model Streaming & Inference Output)"| SB
+
+    %% Styling & Class Definitions
+    classDef browser fill:#0f172a,stroke:#38bdf8,stroke-width:2px,color:#f1f5f9;
+    classDef worker fill:#1e1b4b,stroke:#818cf8,stroke-width:2px,color:#f1f5f9;
+    classDef bridge fill:#1e293b,stroke:#a78bfa,stroke-width:2px,color:#f1f5f9;
+    classDef sandbox fill:#172554,stroke:#38bdf8,stroke-width:2px,color:#f1f5f9;
+
+    class DOM,CS,MAIN browser;
+    class BG worker;
+    class OFF bridge;
+    class SB sandbox;
 ```
 
 ### 1. 3-Tier Process & Thread Isolation
